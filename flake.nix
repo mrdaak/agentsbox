@@ -17,15 +17,22 @@
 
           shellHook = ''
             export OPENCODE_TOOLS_DIR=$(pwd)
-            alias opencode='make -f $OPENCODE_TOOLS_DIR/Makefile run WORKDIR=$PWD'
-            alias opencode-update='podman pull ghcr.io/anomalyco/opencode:latest'
+
+            opencode() {
+              make -f $OPENCODE_TOOLS_DIR/Makefile run WORKDIR=$PWD ARGS="$*"
+            }
+
+            opencode-update() {
+              make -f $OPENCODE_TOOLS_DIR/Makefile update
+            }
 
             echo ""
-            echo "Available aliases:"
-            echo "  opencode        - Run OpenCode in current directory"
-            echo "  opencode-update - Pull latest base image"
+            echo "Available commands:"
+            echo "  opencode              - Run OpenCode in current directory (args optional)"
+            echo "  opencode-update       - Pull latest base image and rebuild"
             echo ""
-            echo "Usage: cd ~/src/my-project && opencode"
+            echo "Manual make usage:"
+            echo "  make run WORKDIR=~/src/my-project"
           '';
         };
       }
