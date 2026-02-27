@@ -17,14 +17,7 @@
 
           shellHook = ''
             export OPENCODE_TOOLS_DIR=$(pwd)
-
-            opencode() {
-              make -f $OPENCODE_TOOLS_DIR/Makefile run WORKDIR=$PWD ARGS="$*"
-            }
-
-            opencode-update() {
-              make -f $OPENCODE_TOOLS_DIR/Makefile update
-            }
+            export PATH="$OPENCODE_TOOLS_DIR/bin:$PATH"
 
             echo ""
             echo "Available commands:"

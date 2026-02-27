@@ -1,6 +1,6 @@
 # OpenCode with Podman
 
-Run [OpenCode](https://opencode.ai/) in a containerized environment with project-specific workspaces and dev tooling pre-installed.
+Run [OpenCode](https://opencode.ai/) in a containerized environment with project-specific workspaces and dev tooling pre-installed. Built from `nixos/nix:latest` with OpenCode installed via bun.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ Once inside the Nix dev shell, these commands are available from any directory:
 | Command           | Description                                |
 |-------------------|--------------------------------------------|
 | `opencode`        | Run OpenCode in current directory          |
-| `opencode-update` | Pull the latest upstream image and rebuild |
+| `opencode-update` | Rebuild the container image (no cache)     |
 
 ## Manual Usage
 
@@ -36,7 +36,7 @@ Without the Nix shell functions:
 # Build the custom image
 make build
 
-# Update to latest upstream image
+# Force rebuild without cache
 make update
 
 # Run OpenCode in a specific directory with arguments
@@ -47,8 +47,8 @@ make run WORKDIR=~/src/my-project
 
 | Target   | Description                                        |
 | -------- | -------------------------------------------------- |
-| `build`  | Build the custom container image                   |
-| `update` | Pull latest upstream image and rebuild (no cache)  |
+| `build`  | Build the container image from nixos/nix:latest    |
+| `update` | Rebuild without cache                            |
 | `run`    | Run OpenCode (requires WORKDIR, supports ARGS)     |
 
 ## Volume Mounts
@@ -61,15 +61,17 @@ Each invocation mounts:
 | `~/.opencode/config`         | `/root/.config/opencode`           | rw   |
 | `~/.opencode/data`           | `/root/.local/share/opencode`      | rw   |
 
+**Note:** Environment variables `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `OPENCODE_CONFIG_DIR` are set automatically to ensure OpenCode loads your configuration correctly.
+
 ## Pre-installed Tools
 
 The container includes:
 
-- **Core**: curl, git, bash, make, ca-certificates
+- **Core**: curl, git, bash, make, ca-certificates, gnutar
+- **Runtime**: bun, node
 - **Search**: ripgrep, fd
 - **Parsing**: jq
 - **Display**: tree, less, ncurses
-- **Node.js**: nodejs, npm, yarn
 
 ## Security
 

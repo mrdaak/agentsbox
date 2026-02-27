@@ -1,5 +1,4 @@
 IMAGE_NAME := my-opencode
-UPSTREAM   := ghcr.io/anomalyco/opencode:latest
 
 SHELL := /bin/bash
 ROOT_PATH = ${OPENCODE_TOOLS_DIR}
@@ -13,9 +12,8 @@ shell:
 build:
 	cd ${ROOT_PATH} && podman build -t $(IMAGE_NAME):latest .
 
-## Pull latest upstream image and rebuild
+## Force rebuild without cache
 update:
-	podman pull $(UPSTREAM)
 	cd ${ROOT_PATH} && podman build --no-cache -t $(IMAGE_NAME):latest .
 
 ## Run OpenCode in the given WORKDIR (defaults to requiring explicit WORKDIR)
@@ -26,7 +24,10 @@ endif
 	mkdir -p ~/.opencode/config ~/.opencode/data
 	podman run -it --rm --name opencode-$(notdir $(WORKDIR)) \
 		--security-opt no-new-privileges:true \
-		-v ~/.opencode/config:/root/.config/opencode \
-		-v ~/.opencode/data:/root/.local/share/opencode \
-		-v $(WORKDIR):/workspace \
+		-e XDG_CONFIG_HOME=/root/.config \
+		-e XDG_DATA_HOME=/root/.local/share \
+		-e OPENCODE_CONFIG_DIR=/root/.config/opencode \
+		-v ~/.opencode/config:/root/.config/opencode:Z \
+		-v ~/.opencode/data:/root/.local/share/opencode:Z \
+		-v $(WORKDIR):/workspace:Z \
 		$(IMAGE_NAME):latest
