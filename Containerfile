@@ -19,4 +19,12 @@ ENV XDG_CONFIG_HOME=/root/.config
 ENV XDG_DATA_HOME=/root/.local/share
 ENV OPENCODE_CONFIG_DIR=/root/.config/opencode
 
+# Copy entrypoint script
+COPY bin/opencode-entrypoint /usr/local/bin/
+RUN chmod +x /usr/local/bin/opencode-entrypoint
+
 WORKDIR /workspace
+
+# Set entrypoint to auto-detect nix shells
+ENTRYPOINT ["/usr/local/bin/opencode-entrypoint"]
+CMD []

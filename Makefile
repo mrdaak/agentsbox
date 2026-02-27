@@ -30,4 +30,4 @@ endif
 		-v ~/.opencode/config:/root/.config/opencode:Z \
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
 		-v $(WORKDIR):/workspace:Z \
-		$(IMAGE_NAME):latest
+		$(IMAGE_NAME):latest $(ARGS)
