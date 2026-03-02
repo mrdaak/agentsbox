@@ -6,7 +6,7 @@ ROOT_PATH = ${OPENCODE_TOOLS_DIR}
 .PHONY: shell build update run
 
 shell:
-	nix develop .
+	nix develop . --extra-experimental-features "nix-command flakes"
 
 ## Build the custom OpenCode image
 build:
