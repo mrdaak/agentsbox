@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+if [ -f /workspace/flake.nix ]; then
+    echo "Detected flake.nix, entering nix develop shell..."
+    exec nix develop .
+elif [ -f /workspace/shell.nix ]; then
+    echo "Detected shell.nix, entering nix-shell..."
+    exec nix-shell
+fi

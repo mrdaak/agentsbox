@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# OpenCode update wrapper script
+# agents update wrapper script
 set -euo pipefail
 
-# Find the directory where this script is located  
+# Find the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Run update via make

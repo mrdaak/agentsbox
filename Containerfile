@@ -8,8 +8,11 @@ RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
     nix-channel --update
 
 # Install dev tools via nix
-RUN nix-env -iA nixpkgs.bun nixpkgs.nodejs_22 nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
-    nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar nixpkgs.opencode
+RUN nix-env -iA nixpkgs.bun nixpkgs.nodejs nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
+    nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar \
+    nixpkgs.opencode
+
+RUN NIXPKGS_ALLOW_UNFREE=1 nix-env -iA nixpkgs.claude-code
 
 # Allow git to work on mounted repositories in /workspace
 RUN git config --system safe.directory /workspace
@@ -20,11 +23,11 @@ ENV XDG_DATA_HOME=/root/.local/share
 ENV OPENCODE_CONFIG_DIR=/root/.config/opencode
 
 # Copy entrypoint script
-COPY bin/opencode-entrypoint /usr/local/bin/
-RUN chmod +x /usr/local/bin/opencode-entrypoint
+COPY bin/shell-entrypoint /usr/local/bin/
+RUN chmod +x /usr/local/bin/shell-entrypoint
 
 WORKDIR /workspace
 
 # Set entrypoint to auto-detect nix shells
-ENTRYPOINT ["/usr/local/bin/opencode-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/shell-entrypoint"]
 CMD []

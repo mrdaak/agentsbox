@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# OpenCode wrapper script - works in any shell (Fish, Bash, Zsh)
-set -euo pipefail
-
-# Find the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Run opencode via make
-exec make -f "$SCRIPT_DIR/Makefile" run WORKDIR="$PWD" ARGS="$*"
