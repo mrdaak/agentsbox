@@ -2,7 +2,7 @@
   description = "AI agents shell";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -13,7 +13,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.gnumake pkgs.podman ];
+          buildInputs = [ pkgs.gnumake pkgs.podman pkgs.zellij ];
 
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)

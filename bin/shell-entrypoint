@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
+if [ -n "$IN_NIX_SHELL" ]; then
+    exec zellij attach --create
+fi
+
 if [ -f /workspace/flake.nix ]; then
     echo "Detected flake.nix, entering nix develop shell..."
-    exec nix develop .
+    exec nix develop . --command shell-entrypoint
 elif [ -f /workspace/shell.nix ]; then
     echo "Detected shell.nix, entering nix-shell..."
-    exec nix-shell
+    exec nix-shell --run shell-entrypoint
 fi
+
+exec zellij attach --create

@@ -26,6 +26,7 @@ ifndef WORKDIR
 	$(error WORKDIR is not set. Usage: make run AGENT=claude WORKDIR=~/src/my-project)
 endif
 	mkdir -p ~/.opencode/config ~/.opencode/data ~/.claude
+	touch ~/.claude.json
 	podman volume exists $(NIX_VOLUME) || podman volume create $(NIX_VOLUME)
 	podman run -it --rm --name opencode-$(notdir $(WORKDIR)) \
 		--security-opt no-new-privileges:true \
@@ -35,6 +36,8 @@ endif
 		-v $(NIX_VOLUME):/nix \
 		-v ~/.opencode/config:/root/.config/opencode:Z \
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
+		-p 4096:4096 \
+		-p 1455:1455 \
 		-v ~/.claude:/root/.claude:Z \
 		-v ~/.claude.json:/root/.claude.json:Z \
 		-v $(WORKDIR):/workspace:Z \

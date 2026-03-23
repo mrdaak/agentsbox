@@ -9,7 +9,7 @@ RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
 
 # Install dev tools via nix
 RUN nix-env -iA nixpkgs.bun nixpkgs.nodejs nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
-    nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar \
+    nixpkgs.zellij nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar \
     nixpkgs.opencode
 
 RUN NIXPKGS_ALLOW_UNFREE=1 nix-env -iA nixpkgs.claude-code
