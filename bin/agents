@@ -5,5 +5,15 @@ set -euo pipefail
 # Find the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+AUTH=""
+ARGS=()
+for arg in "$@"; do
+    if [[ "$arg" == "--auth" ]]; then
+        AUTH=1
+    else
+        ARGS+=("$arg")
+    fi
+done
+
 # Run opencode via make
-exec make -f "$SCRIPT_DIR/Makefile" run AGENT="opencode" WORKDIR="$PWD" ARGS="$*"
+exec make -f "$SCRIPT_DIR/Makefile" run AGENT="opencode" WORKDIR="$PWD" AUTH="$AUTH" ARGS="${ARGS[*]}"

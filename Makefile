@@ -38,8 +38,8 @@ endif
 		-v $(NIX_VOLUME):/nix \
 		-v ~/.opencode/config:/root/.config/opencode:Z \
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
-		-p 4096:4096 \
-		-p 1455:1455 \
+		-p 4096 \
+		$(if $(AUTH),-p 1455:1455) \
 		-v ~/.claude:/root/.claude:Z \
 		-v ~/.claude.json:/root/.claude.json:Z \
 		-v $(WORKDIR):/workspace:Z \
