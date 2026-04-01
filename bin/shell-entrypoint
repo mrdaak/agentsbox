@@ -5,12 +5,35 @@ if [ -n "$IN_NIX_SHELL" ]; then
     exec zellij attach --create
 fi
 
+ask_load() {
+    local label="$1"
+    read -r -p "Detected $label. Load nix environment? [Y/n]: " answer
+    case "$answer" in
+        [Nn]*) return 1 ;;
+        *)     return 0 ;;
+    esac
+}
+
+print_load_error() {
+    echo ""
+    echo "┌─────────────────────────────────────────────────────┐"
+    echo "│  ERROR: Nix environment failed to load              │"
+    echo "│  Agent shell is NOT active.                         │"
+    echo "│  Falling back to plain shell.                       │"
+    echo "└─────────────────────────────────────────────────────┘"
+    echo ""
+}
+
 if [ -f /workspace/flake.nix ]; then
-    echo "Detected flake.nix, entering nix develop shell..."
-    exec nix develop . --command shell-entrypoint
+    if ask_load "flake.nix"; then
+        exec nix develop . --command shell-entrypoint
+        print_load_error
+    fi
 elif [ -f /workspace/shell.nix ]; then
-    echo "Detected shell.nix, entering nix-shell..."
-    exec nix-shell --run shell-entrypoint
+    if ask_load "shell.nix"; then
+        exec nix-shell --run shell-entrypoint
+        print_load_error
+    fi
 fi
 
 exec zellij attach --create
