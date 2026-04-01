@@ -1,5 +1,7 @@
 IMAGE_NAME := ai-agent
 NIX_VOLUME := agent-nix-store
+WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
+CONTAINER_NAME := opencode-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
 
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
@@ -28,7 +30,7 @@ endif
 	mkdir -p ~/.opencode/config ~/.opencode/data ~/.claude
 	touch ~/.claude.json
 	podman volume exists $(NIX_VOLUME) || podman volume create $(NIX_VOLUME)
-	podman run -it --rm --name opencode-$(notdir $(WORKDIR)) \
+	podman run -it --rm --name $(CONTAINER_NAME) \
 		--security-opt no-new-privileges:true \
 		-e XDG_CONFIG_HOME=/root/.config \
 		-e XDG_DATA_HOME=/root/.local/share \
