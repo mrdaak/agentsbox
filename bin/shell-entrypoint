@@ -26,12 +26,12 @@ print_load_error() {
 
 if [ -f /workspace/flake.nix ]; then
     if ask_load "flake.nix"; then
-        exec nix develop . --command shell-entrypoint
+        exec nix develop . --command "$0"
         print_load_error
     fi
 elif [ -f /workspace/shell.nix ]; then
     if ask_load "shell.nix"; then
-        exec nix-shell --run shell-entrypoint
+        exec nix-shell --run "$0"
         print_load_error
     fi
 fi
