@@ -24,9 +24,48 @@ print_load_error() {
     echo ""
 }
 
+pick_devshell() {
+    local shells
+    shells=$(nix flake show --json 2>/dev/null \
+        | jq -r '.devShells | to_entries[0].value | keys[]' 2>/dev/null) || true
+
+    if [ -z "$shells" ]; then
+        echo "default"
+        return
+    fi
+
+    local non_default
+    non_default=$(echo "$shells" | grep -v '^default$' || true)
+
+    if [ -z "$non_default" ]; then
+        echo "default"
+        return
+    fi
+
+    # Multiple shells — let user pick
+    local all_shells=("default")
+    while IFS= read -r s; do
+        all_shells+=("$s")
+    done <<< "$non_default"
+
+    echo "Available devShells:" >&2
+    local i=1
+    for s in "${all_shells[@]}"; do
+        echo "  $i) $s" >&2
+        i=$((i + 1))
+    done
+
+    local choice
+    read -r -p "Select shell [1]: " choice >&2
+    choice=${choice:-1}
+
+    echo "${all_shells[$((choice - 1))]:-default}"
+}
+
 if [ -f /workspace/flake.nix ]; then
     if ask_load "flake.nix"; then
-        exec nix develop . --command "$0"
+        shell=$(pick_devshell)
+        exec nix develop ".#$shell" --command "$0"
         print_load_error
     fi
 elif [ -f /workspace/shell.nix ]; then
