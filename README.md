@@ -17,13 +17,13 @@ nix profile install /path/to/this/repo
 # nix profile install github:<org>/<repo>
 ```
 
-This puts `agents`, `agents-update`, and `agents-doctor` on your `PATH`. Run them from any project directory — that directory is mounted into the container.
+This puts `agents` on your `PATH`. Run it from any project directory — that directory is mounted into the container.
 
 ```bash
 cd ~/src/my-project
-agents          # launch an agent against this directory
-agents-doctor   # check host environment
-agents-update   # pull a fresh base image and rebuild
+agents              # launch an agent against this directory
+agents doctor       # check host environment
+agents update       # pull a fresh base image and rebuild
 ```
 
 Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix profile remove agents`.
@@ -32,11 +32,12 @@ Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix pro
 
 | Command          | Description                                                |
 | ---------------- | ---------------------------------------------------------- |
-| `agents`         | Run an agent in the current directory                      |
-| `agents-update`  | Pull the latest base image and rebuild the container       |
-| `agents-doctor`  | Check host environment for required tooling                |
+| `agents`         | Run an agent in the current directory (same as `agents run`) |
+| `agents update`  | Pull the latest base image and rebuild the container       |
+| `agents doctor`  | Check host environment for required tooling                |
+| `agents help`    | Show usage                                                 |
 
-`agents` accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
+`agents` (or `agents run`) accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
 
 ## Development
 
@@ -47,7 +48,7 @@ nix develop          # or: direnv allow (once)
 make run WORKDIR=~/src/my-project
 ```
 
-The dev shell adds `bin/` to `PATH` so the same `agents` / `agents-update` / `agents-doctor` commands work, but resolved against the working tree rather than the Nix store.
+The dev shell adds `bin/` to `PATH` so the same `agents` command resolves against the working tree rather than the Nix store.
 
 ### Makefile Targets
 
@@ -56,7 +57,7 @@ The dev shell adds `bin/` to `PATH` so the same `agents` / `agents-update` / `ag
 | `build`            | Build the container image                                    |
 | `update`           | Rebuild without cache                                        |
 | `run`              | Run the agent (requires `WORKDIR`)                           |
-| `doctor`           | Run `agents-doctor`                                          |
+| `doctor`           | Run `bin/doctor`                                             |
 | `clean-nix-store`  | Remove the persistent Nix store volume                       |
 | `clean-pnpm-store` | Remove the persistent pnpm store volume                      |
 

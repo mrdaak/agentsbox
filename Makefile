@@ -51,7 +51,7 @@ endif
 
 ## Check host environment for required tooling
 doctor:
-	@./bin/agents-doctor
+	@./bin/doctor
 
 ## Remove the persistent Nix store volume (next run re-populates from image)
 clean-nix-store:

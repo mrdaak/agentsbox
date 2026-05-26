@@ -37,11 +37,9 @@
             cp -r Makefile Containerfile bin $out/share/agents/
             chmod +x $out/share/agents/bin/*
 
-            for cmd in agents agents-update agents-doctor; do
-              makeWrapper $out/share/agents/bin/$cmd $out/bin/$cmd \
-                --set AGENTS_TOOLS_DIR $out/share/agents \
-                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
-            done
+            makeWrapper $out/share/agents/bin/agents $out/bin/agents \
+              --set AGENTS_TOOLS_DIR $out/share/agents \
+              --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
 
             runHook postInstall
           '';
@@ -64,9 +62,9 @@
 
             echo ""
             echo "Available commands:"
-            echo "  agents                - Select an agent to run within the scope of current directory"
-            echo "  agents-update         - Pull latest base image and rebuild"
-            echo "  agents-doctor         - Check host environment for required tooling"
+            echo "  agents          - Run an agent in the current directory"
+            echo "  agents update   - Pull latest base image and rebuild"
+            echo "  agents doctor   - Check host environment for required tooling"
             echo ""
             echo "Manual make usage:"
             echo "  make run WORKDIR=~/src/my-project"

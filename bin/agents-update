@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# agents update wrapper script
-set -euo pipefail
-
-# Find the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Run update via make
-exec make -f "$SCRIPT_DIR/Makefile" update

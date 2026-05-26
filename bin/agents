@@ -1,19 +1,57 @@
 #!/usr/bin/env bash
-# agents wrapper script - works in any shell (Fish, Bash, Zsh)
+# agents — dispatcher for run / update / doctor
 set -euo pipefail
 
-# Find the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-AUTH=""
-ARGS=()
-for arg in "$@"; do
-    if [[ "$arg" == "--auth" ]]; then
-        AUTH=1
-    else
-        ARGS+=("$arg")
-    fi
-done
+usage() {
+    cat <<EOF
+Usage: agents [subcommand] [options]
 
-# Run opencode via make
-exec make -f "$SCRIPT_DIR/Makefile" run WORKDIR="$PWD" AUTH="$AUTH" ARGS="${ARGS[*]}"
+Subcommands:
+  run            Run an agent in the current directory (default)
+  update         Pull the latest base image and rebuild
+  doctor         Check host environment for required tooling
+  help           Show this message
+
+Options for 'run':
+  --auth         Bind host port 1455:1455 for OpenCode auth flows
+EOF
+}
+
+cmd_run() {
+    local auth=""
+    local args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "--auth" ]]; then
+            auth=1
+        else
+            args+=("$arg")
+        fi
+    done
+    exec make -f "$SCRIPT_DIR/Makefile" run \
+        WORKDIR="$PWD" \
+        AUTH="$auth" \
+        ARGS="${args[*]:-}"
+}
+
+cmd_update() {
+    exec make -f "$SCRIPT_DIR/Makefile" update
+}
+
+cmd_doctor() {
+    exec "$SCRIPT_DIR/bin/doctor" "$@"
+}
+
+if [[ $# -eq 0 ]]; then
+    cmd_run
+fi
+
+case "$1" in
+    run)            shift; cmd_run "$@" ;;
+    update)         shift; cmd_update ;;
+    doctor)         shift; cmd_doctor "$@" ;;
+    help|-h|--help) usage ;;
+    --*)            cmd_run "$@" ;;
+    *)              usage; exit 1 ;;
+esac
