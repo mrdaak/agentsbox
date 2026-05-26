@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCode wrapper script - works in any shell (Fish, Bash, Zsh)
+# agents wrapper script - works in any shell (Fish, Bash, Zsh)
 set -euo pipefail
 
 # Find the directory where this script is located
@@ -16,4 +16,4 @@ for arg in "$@"; do
 done
 
 # Run opencode via make
-exec make -f "$SCRIPT_DIR/Makefile" run AGENT="opencode" WORKDIR="$PWD" AUTH="$AUTH" ARGS="${ARGS[*]}"
+exec make -f "$SCRIPT_DIR/Makefile" run WORKDIR="$PWD" AUTH="$AUTH" ARGS="${ARGS[*]}"

@@ -4,27 +4,59 @@ Run AI coding agents (Claude Code, OpenCode, Codex) in a containerized environme
 
 ## Prerequisites
 
-- [Nix](https://nixos.org/download/) (with flakes enabled)
-- [Podman](https://podman.io/) (provided by the Nix flake)
-- [direnv](https://direnv.net/) (optional, for auto-activation)
+- [Nix](https://nixos.org/download/) with flakes enabled
+- A working Podman setup (rootless on Linux, `podman machine` on macOS). `podman` itself is bundled into the installed package, but the host-side service/VM is yours to manage.
 
-## Quick Start
+## Install
 
 ```bash
-# Enter the Nix dev shell (or let direnv do it automatically)
-nix develop          # or: direnv allow (once)
+# Install from a local clone
+nix profile install /path/to/this/repo
 
-# Run an agent in a project directory
+# ...or directly from a flake reference (once published)
+# nix profile install github:<org>/<repo>
+```
+
+This puts `agents`, `agents-update`, and `agents-doctor` on your `PATH`. Run them from any project directory — that directory is mounted into the container.
+
+```bash
+cd ~/src/my-project
+agents          # launch an agent against this directory
+agents-doctor   # check host environment
+agents-update   # pull a fresh base image and rebuild
+```
+
+Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix profile remove agents`.
+
+## Commands
+
+| Command          | Description                                                |
+| ---------------- | ---------------------------------------------------------- |
+| `agents`         | Run an agent in the current directory                      |
+| `agents-update`  | Pull the latest base image and rebuild the container       |
+| `agents-doctor`  | Check host environment for required tooling                |
+
+`agents` accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
+
+## Development
+
+To hack on this tool itself, use the dev shell instead of (or alongside) a profile install:
+
+```bash
+nix develop          # or: direnv allow (once)
 make run WORKDIR=~/src/my-project
 ```
 
-## Makefile Targets
+The dev shell adds `bin/` to `PATH` so the same `agents` / `agents-update` / `agents-doctor` commands work, but resolved against the working tree rather than the Nix store.
+
+### Makefile Targets
 
 | Target             | Description                                                  |
 | ------------------ | ------------------------------------------------------------ |
 | `build`            | Build the container image                                    |
 | `update`           | Rebuild without cache                                        |
 | `run`              | Run the agent (requires `WORKDIR`)                           |
+| `doctor`           | Run `agents-doctor`                                          |
 | `clean-nix-store`  | Remove the persistent Nix store volume                       |
 | `clean-pnpm-store` | Remove the persistent pnpm store volume                      |
 
