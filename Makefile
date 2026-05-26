@@ -3,6 +3,7 @@ NIX_VOLUME := agent-nix-store
 PNPM_VOLUME := agent-pnpm-store
 WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
 CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
+NPMRC_SECRET := $(shell podman secret exists npmrc 2>/dev/null && echo "--secret npmrc,target=/root/.npmrc")
 
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
@@ -45,6 +46,7 @@ endif
 		-v ~/.config/codex:/root/.config/codex:Z \
 		-v ~/.local/share/codex:/root/.local/share/codex:Z \
 		-v $(WORKDIR):/workspace:Z \
+		$(NPMRC_SECRET) \
 		$(IMAGE_NAME):latest
 
 ## Remove the persistent Nix store volume (next run re-populates from image)
