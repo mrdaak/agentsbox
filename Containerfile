@@ -8,19 +8,27 @@ RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
     nix-channel --update
 
 # Install dev tools via nix
-RUN nix-env -iA nixpkgs.bun nixpkgs.nodejs nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
+RUN nix-env -iA nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
     nixpkgs.zellij nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar \
-    nixpkgs.opencode
+    nixpkgs.nodejs nixpkgs.opencode nixpkgs.unzip nixpkgs.gnused
 
 RUN NIXPKGS_ALLOW_UNFREE=1 nix-env -iA nixpkgs.claude-code
-
-# Allow git to work on mounted repositories in /workspace
-RUN git config --system safe.directory /workspace
 
 # Set up XDG directories for proper config loading
 ENV XDG_CONFIG_HOME=/root/.config
 ENV XDG_DATA_HOME=/root/.local/share
 ENV OPENCODE_CONFIG_DIR=/root/.config/opencode
+
+# Configure pnpm to use a shared store at /pnpm-store. pnpm 11 reads YAML
+# config from $XDG_CONFIG_HOME/pnpm/config.yaml; it ignores npm_config_* env
+# vars and /etc/npmrc, and would otherwise place the store at the mount-point
+# root of /workspace.
+RUN mkdir -p /root/.config/pnpm \
+ && printf 'storeDir: /pnpm-store\npackageImportMethod: copy\n' \
+    > /root/.config/pnpm/config.yaml
+
+# Allow git to work on mounted repositories in /workspace
+RUN git config --system safe.directory /workspace
 
 # Copy entrypoint script
 COPY bin/shell-entrypoint /usr/local/bin/

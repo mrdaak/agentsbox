@@ -1,17 +1,18 @@
 IMAGE_NAME := ai-agent
 NIX_VOLUME := agent-nix-store
+PNPM_VOLUME := agent-pnpm-store
 WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
-CONTAINER_NAME := opencode-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
+CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
 
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
 
-.PHONY: shell build update run clean-nix-store
+.PHONY: shell build update run clean-nix-store clean-pnpm-store
 
 shell:
 	nix develop . --extra-experimental-features "nix-command flakes"
 
-## Build the custom OpenCode image
+## Build the image
 build:
 	cd ${ROOT_PATH} && podman build -t $(IMAGE_NAME):latest .
 
