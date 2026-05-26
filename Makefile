@@ -8,7 +8,7 @@ NPMRC_SECRET := $(shell podman secret exists npmrc 2>/dev/null && echo "--secret
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
 
-.PHONY: shell build update run clean-nix-store clean-pnpm-store
+.PHONY: shell build update run clean-nix-store clean-pnpm-store doctor
 
 shell:
 	nix develop . --extra-experimental-features "nix-command flakes"
@@ -48,6 +48,10 @@ endif
 		-v $(WORKDIR):/workspace:Z \
 		$(NPMRC_SECRET) \
 		$(IMAGE_NAME):latest
+
+## Check host environment for required tooling
+doctor:
+	@./bin/doctor
 
 ## Remove the persistent Nix store volume (next run re-populates from image)
 clean-nix-store:

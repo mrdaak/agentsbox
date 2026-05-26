@@ -1,0 +1,123 @@
+#!/usr/bin/env nu
+
+def has-cmd [name: string] {
+    (which $name | length) > 0
+}
+
+def pass [msg: string] { { status: "pass", msg: $msg, fix: "" } }
+def fail-check [msg: string, fix: string] { { status: "fail", msg: $msg, fix: $fix } }
+def warn-check [msg: string, fix: string] { { status: "warn", msg: $msg, fix: $fix } }
+
+def check-nix [] {
+    if not (has-cmd "nix") {
+        return [(fail-check "Nix not installed" "https://nixos.org/download/")]
+    }
+    let v = (nix --version | str trim)
+    let r = (do { nix --extra-experimental-features 'nix-command flakes' flake --help } | complete)
+    if $r.exit_code == 0 {
+        [
+            (pass $"Nix installed \(($v)\)")
+            (pass "Flakes available")
+        ]
+    } else {
+        [
+            (pass $"Nix installed \(($v)\)")
+            (fail-check "Flakes not enabled" "Add 'experimental-features = nix-command flakes' to ~/.config/nix/nix.conf")
+        ]
+    }
+}
+
+def check-podman [] {
+    if not (has-cmd "podman") {
+        return [(fail-check "Podman not installed" "Provided by 'nix develop' shell")]
+    }
+
+    let v = (podman --version | str trim)
+    mut results = [(pass $"Podman installed \(($v)\)")]
+
+    let machine_list = (do { podman machine list --format '{{.Name}}' } | complete)
+    let has_machine = ($machine_list.exit_code == 0) and (($machine_list.stdout | str trim) != "")
+
+    if $has_machine {
+        let running = ((podman machine list --format '{{.Running}}' | str trim) | str contains "true")
+        if $running {
+            $results = ($results | append (pass "Podman machine running"))
+
+            let mem_result = (do { podman machine inspect } | complete)
+            if $mem_result.exit_code == 0 {
+                let mem = ($mem_result.stdout | from json | get 0.Resources.Memory)
+                if $mem >= 8192 {
+                    $results = ($results | append (pass $"Podman memory: ($mem) MB"))
+                } else {
+                    $results = ($results | append (warn-check
+                        $"Podman memory: ($mem) MB \(recommend ≥ 8192\)"
+                        "podman machine stop ; podman machine set --memory 8192 ; podman machine start"))
+                }
+            }
+        } else {
+            $results = ($results | append (fail-check "Podman machine not running" "podman machine start"))
+        }
+    } else {
+        let info_check = (do { podman info } | complete)
+        if $info_check.exit_code == 0 {
+            $results = ($results | append (pass "Podman running natively \(no VM\)"))
+        } else {
+            $results = ($results | append (fail-check "Podman not reachable" "podman machine init && podman machine start"))
+        }
+    }
+
+    $results
+}
+
+def check-image [] {
+    let r = (do { podman image exists ai-agent:latest } | complete)
+    if $r.exit_code == 0 {
+        [(pass "Image ai-agent:latest built")]
+    } else {
+        [(warn-check "Image ai-agent:latest missing" "make build")]
+    }
+}
+
+def check-npmrc [] {
+    if not (has-cmd "podman") { return [] }
+    let r = (do { podman secret exists npmrc } | complete)
+    if $r.exit_code == 0 {
+        [(pass "Podman secret 'npmrc' present \(mounted to /root/.npmrc\)")]
+    } else {
+        [(warn-check "Podman secret 'npmrc' not set \(optional\)" "podman secret create npmrc ~/.npmrc")]
+    }
+}
+
+def main [] {
+    print "Checking environment..."
+    print ""
+
+    let results = [
+        (check-nix)
+        (check-podman)
+        (check-image)
+        (check-npmrc)
+    ] | flatten
+
+    for r in $results {
+        if $r.status == "pass" {
+            print $"  (ansi green)✓(ansi reset) ($r.msg)"
+        } else if $r.status == "fail" {
+            print $"  (ansi red)✗(ansi reset) ($r.msg)"
+            print $"     → ($r.fix)"
+        } else {
+            print $"  (ansi yellow)!(ansi reset) ($r.msg)"
+            print $"     → ($r.fix)"
+        }
+    }
+
+    let fails = ($results | where status == "fail" | length)
+    let warns = ($results | where status == "warn" | length)
+
+    print ""
+    if $fails > 0 {
+        print $"Failed: ($fails), Warnings: ($warns)"
+        exit 1
+    }
+    print $"All required checks passed \(($warns) warning\(s\)\)"
+}

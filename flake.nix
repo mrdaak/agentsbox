@@ -13,7 +13,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.gnumake pkgs.podman pkgs.zellij ];
+          buildInputs = [ pkgs.gnumake pkgs.podman pkgs.zellij pkgs.nushell ];
 
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)
@@ -23,6 +23,7 @@
             echo "Available commands:"
             echo "  agents                - Select an agent to run within the scope of current directory"
             echo "  agents-update         - Pull latest base image and rebuild"
+            echo "  doctor                - Check host environment for required tooling"
             echo ""
             echo "Manual make usage:"
             echo "  make run WORKDIR=~/src/my-project"
