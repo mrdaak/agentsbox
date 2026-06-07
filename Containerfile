@@ -1,4 +1,4 @@
-FROM ghcr.io/nixos/nix:2.34.7
+FROM ghcr.io/nixos/nix:2.34.7@sha256:bf1d938835ab96312f098fa6c2e9cab367728e0aad0646ee3e02a787c80d8fb8
 
 # Enable flakes and install nixpkgs
 RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
