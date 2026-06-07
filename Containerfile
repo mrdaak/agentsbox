@@ -8,11 +8,12 @@ RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
     nix-channel --update
 
 # Install dev tools via nix
-RUN nix-env -iA nixpkgs.gitMinimal nixpkgs.jq nixpkgs.ripgrep nixpkgs.fd nixpkgs.gnumake \
-    nixpkgs.zellij nixpkgs.cacert nixpkgs.less nixpkgs.ncurses nixpkgs.tree nixpkgs.bash nixpkgs.curl nixpkgs.gnutar \
-    nixpkgs.nodejs nixpkgs.opencode nixpkgs.unzip nixpkgs.gnused
+RUN nix profile add nixpkgs#gitMinimal nixpkgs#jq nixpkgs#ripgrep nixpkgs#fd nixpkgs#gnumake \
+    nixpkgs#zellij nixpkgs#cacert nixpkgs#less nixpkgs#ncurses nixpkgs#tree nixpkgs#bash nixpkgs#curl nixpkgs#gnutar \
+    nixpkgs#nodejs nixpkgs#opencode nixpkgs#unzip nixpkgs#gnused --priority 4
 
-RUN NIXPKGS_ALLOW_UNFREE=1 nix-env -iA nixpkgs.claude-code
+ENV NIXPKGS_ALLOW_UNFREE=1
+RUN nix profile add nixpkgs#claude-code --priority 4 --impure
 
 # Set up XDG directories for proper config loading
 ENV XDG_CONFIG_HOME=/root/.config

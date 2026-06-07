@@ -65,7 +65,7 @@ pick_devshell() {
 if [ -f /workspace/flake.nix ]; then
     if ask_load "flake.nix"; then
         shell=$(pick_devshell)
-        exec nix develop ".#$shell" --command "$0"
+        exec nix develop ".#$shell" --extra-experimental-features "nix-command flakes" --command "$0"
         print_load_error
     fi
 elif [ -f /workspace/shell.nix ]; then
