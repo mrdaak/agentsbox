@@ -65,12 +65,20 @@ pick_devshell() {
 if [ -f /workspace/flake.nix ]; then
     if ask_load "flake.nix"; then
         shell=$(pick_devshell)
-        exec nix develop ".#$shell" --extra-experimental-features "nix-command flakes" --command "$0"
+        if [ "$shell" = "default" ]; then
+            # Bare `nix develop` resolves devShells.<system>.default OR the
+            # legacy singular devShell.<system>; `.#default` only matches the
+            # former, so omit the fragment to support devShell-only flakes.
+            nix develop --extra-experimental-features "nix-command flakes" --command "$0" && exit 0
+        else
+            nix develop ".#$shell" --extra-experimental-features "nix-command flakes" --command "$0" && exit 0
+        fi
+        # Reached only if nix develop failed to load — fall back to a plain shell.
         print_load_error
     fi
 elif [ -f /workspace/shell.nix ]; then
     if ask_load "shell.nix"; then
-        exec nix-shell --run "$0"
+        nix-shell --run "$0" && exit 0
         print_load_error
     fi
 fi
