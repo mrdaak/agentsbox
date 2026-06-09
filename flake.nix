@@ -63,6 +63,7 @@
             echo ""
             echo "Available commands:"
             echo "  agents          - Run an agent in the current directory"
+            echo "  agents list     - List running agent containers"
             echo "  agents update   - Pull latest base image and rebuild"
             echo "  agents doctor   - Check host environment for required tooling"
             echo ""
