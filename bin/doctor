@@ -78,16 +78,6 @@ def check-image [] {
     }
 }
 
-def check-npmrc [] {
-    if not (has-cmd "podman") { return [] }
-    let r = (do { podman secret exists npmrc } | complete)
-    if $r.exit_code == 0 {
-        [(pass "Podman secret 'npmrc' present \(mounted to /root/.npmrc\)")]
-    } else {
-        [(warn-check "Podman secret 'npmrc' not set \(optional\)" "podman secret create npmrc ~/.npmrc")]
-    }
-}
-
 def main [] {
     print "Checking environment..."
     print ""
@@ -96,7 +86,6 @@ def main [] {
         (check-nix)
         (check-podman)
         (check-image)
-        (check-npmrc)
     ] | flatten
 
     for r in $results {

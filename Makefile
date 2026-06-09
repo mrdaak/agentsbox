@@ -3,7 +3,17 @@ NIX_VOLUME := agent-nix-store
 PNPM_VOLUME := agent-pnpm-store
 WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
 CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
-NPMRC_SECRET := $(shell podman secret exists npmrc 2>/dev/null && echo "--secret npmrc,target=/root/.npmrc")
+# Per-project secrets loaded via `agents load-secret`. Their names are prefixed
+# with this project's workdir hash (agent-<hash>-<name>); the mount target is
+# stored in the agents.target label. (`podman secret ls` has no label filter,
+# so we match by name prefix, then read the target via inspect.) Mount each
+# read-only at its recorded target.
+SECRET_FLAGS := $(shell podman secret ls --format '{{.Name}}' 2>/dev/null | \
+	grep "^agent-$(WORKDIR_HASH)-" | \
+	while read -r n; do \
+		t=$$(podman secret inspect "$$n" --format '{{index .Spec.Labels "agents.target"}}' 2>/dev/null); \
+		[ -n "$$t" ] && printf -- '--secret %s,target=%s,mode=0400 ' "$$n" "$$t"; \
+	done)
 
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
@@ -46,7 +56,7 @@ endif
 		-v ~/.config/codex:/root/.config/codex:Z \
 		-v ~/.local/share/codex:/root/.local/share/codex:Z \
 		-v $(WORKDIR):/workspace:Z \
-		$(NPMRC_SECRET) \
+		$(SECRET_FLAGS) \
 		$(IMAGE_NAME):latest
 
 ## Check host environment for required tooling

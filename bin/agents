@@ -1,26 +1,43 @@
 #!/usr/bin/env bash
-# agents — dispatcher for run / list / update / doctor
+# agents — dispatcher for enter / list / load-secret / update / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# First 8 hex of the SHA-1 of a string. Matches the Makefile's
+# `shasum | cut -c1-8` (falls back to sha1sum, which is the same algorithm, so
+# the project hash lines up regardless of which tool is on PATH).
+sha1_8() {
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$1" | shasum | cut -c1-8
+    else
+        printf '%s' "$1" | sha1sum | cut -c1-8
+    fi
+}
+
 usage() {
     cat <<EOF
-Usage: agents [subcommand] [options]
+Usage: agents <subcommand> [options]
 
 Subcommands:
-  run            Run an agent in the current directory (default)
+  enter          Enter an agent shell in the current directory
   list           List running agent containers (pass -a for stopped too)
+  load-secret    Load a file as a podman secret for a project's agent shell
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
   help           Show this message
 
-Options for 'run':
+Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
+
+Options for 'load-secret' (agents load-secret <file> [options]):
+  --target PATH  In-container mount path (default: /root/<filename>)
+  --name NAME    Secret key (default: <filename>); re-loading replaces it
+  --project DIR  Project the secret belongs to (default: current directory)
 EOF
 }
 
-cmd_run() {
+cmd_enter() {
     local auth=""
     local args=()
     for arg in "$@"; do
@@ -43,6 +60,50 @@ cmd_list() {
         --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" "$@"
 }
 
+cmd_load_secret() {
+    local file="" name="" target="" project="$PWD"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)  target="$2"; shift 2 ;;
+            --name)    name="$2"; shift 2 ;;
+            --project) project="$2"; shift 2 ;;
+            -*)        echo "load-secret: unknown option: $1" >&2; exit 1 ;;
+            *)         file="$1"; shift ;;
+        esac
+    done
+
+    if [[ -z "$file" ]]; then
+        echo "usage: agents load-secret <file> [--target PATH] [--name NAME] [--project DIR]" >&2
+        exit 1
+    fi
+    [[ -f "$file" ]] || { echo "load-secret: no such file: $file" >&2; exit 1; }
+    [[ -d "$project" ]] || { echo "load-secret: no such project dir: $project" >&2; exit 1; }
+
+    # Canonicalize to match the WORKDIR string the Makefile hashes (it uses $PWD
+    # passed by `enter`), so the project hash lines up at run time.
+    project="$(cd "$project" && pwd)"
+    local hash base
+    hash="$(sha1_8 "$project")"
+    base="$(basename "$file")"
+    [[ -n "$name" ]]   || name="$base"
+    [[ -n "$target" ]] || target="/root/$base"
+
+    local secret="agent-$hash-$name"
+    # Re-loading replaces an existing secret of the same name (podman secrets
+    # are immutable, so remove then recreate).
+    podman secret rm "$secret" >/dev/null 2>&1 || true
+    podman secret create \
+        --label agents.managed=true \
+        --label "agents.project=$hash" \
+        --label "agents.projectdir=$project" \
+        --label "agents.target=$target" \
+        "$secret" "$file" >/dev/null
+
+    echo "Loaded secret '$secret'"
+    echo "  project: $project"
+    echo "  mounts at: $target (read-only, in that project's agent shell)"
+}
+
 cmd_update() {
     exec make -f "$SCRIPT_DIR/Makefile" update
 }
@@ -52,15 +113,18 @@ cmd_doctor() {
 }
 
 if [[ $# -eq 0 ]]; then
-    cmd_run
+    usage
+    exit 0
 fi
 
 case "$1" in
-    run)            shift; cmd_run "$@" ;;
+    enter)          shift; cmd_enter "$@" ;;
+    run)            shift; cmd_enter "$@" ;; # alias for enter (backwards compat)
     list)           shift; cmd_list "$@" ;;
+    load-secret)    shift; cmd_load_secret "$@" ;;
     update)         shift; cmd_update ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;
-    --*)            cmd_run "$@" ;;
+    --*)            cmd_enter "$@" ;;
     *)              usage; exit 1 ;;
 esac

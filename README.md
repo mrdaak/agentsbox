@@ -21,7 +21,8 @@ This puts `agents` on your `PATH`. Run it from any project directory — that di
 
 ```bash
 cd ~/src/my-project
-agents              # launch an agent against this directory
+agents enter        # enter an agent shell in this directory
+agents list         # list running agent containers
 agents doctor       # check host environment
 agents update       # pull a fresh base image and rebuild
 ```
@@ -32,12 +33,14 @@ Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix pro
 
 | Command          | Description                                                |
 | ---------------- | ---------------------------------------------------------- |
-| `agents`         | Run an agent in the current directory (same as `agents run`) |
+| `agents enter`   | Enter an agent shell in the current directory              |
+| `agents list`    | List running agent containers (pass `-a` for stopped too)  |
+| `agents load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell |
 | `agents update`  | Pull the latest base image and rebuild the container       |
 | `agents doctor`  | Check host environment for required tooling                |
 | `agents help`    | Show usage                                                 |
 
-`agents` (or `agents run`) accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
+Running `agents` with no subcommand prints usage. `agents enter` (alias: `agents run`) accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
 
 ## Development
 
@@ -99,17 +102,37 @@ Two named volumes survive across container runs and are shared by all projects:
 
 Use `make clean-nix-store` / `make clean-pnpm-store` to wipe them.
 
-## npmrc Secret (optional)
+## Per-project Secrets
 
-If a Podman secret named `npmrc` exists, it's mounted read-only at `/root/.npmrc`. Useful for private registry tokens without baking them into the image or committing them to project files.
+For credentials a project needs — a private-registry `.npmrc`, a `.env`, a deploy token,
+cloud creds — use `agents load-secret`. It stores the file as a podman secret scoped to that
+project and mounts it (read-only) only into that project's agent shell.
 
 ```bash
-podman secret create npmrc ~/.npmrc
-# or from stdin:
-printf '//npm.pkg.github.com/:_authToken=ghp_xxx\n' | podman secret create npmrc -
+cd ~/src/my-project
+agents load-secret ~/.npmrc --target /root/.npmrc   # private registry tokens
+agents load-secret ./.env                           # mounts at /root/.env
+agents load-secret ./gh-token --target /root/.config/gh/hosts.yml
+agents load-secret ~/secrets/key --project ~/src/other
 ```
 
-To rotate: `podman secret rm npmrc && podman secret create npmrc <source>`.
+Options: `--target PATH` sets the in-container mount path (default `/root/<filename>`);
+`--name NAME` sets the secret key (default the filename); `--project DIR` picks the project
+(default the current directory). Re-loading the same name replaces it, so that's also how you
+rotate.
+
+Under the hood each secret is a podman secret named `agent-<project-hash>-<name>` with the
+mount target stored in a label; `agents enter` mounts every secret matching the current
+project's hash. Inspect or remove them with plain podman:
+
+```bash
+podman secret ls
+podman secret rm agent-<hash>-<name>
+```
+
+> Note: these are stored by podman's local (unencrypted) secret driver and mounted as
+> root-readable files inside the container. Fine for local dev credentials; don't treat it
+> as a vault.
 
 ## Pre-installed Tools
 
