@@ -7,13 +7,11 @@ RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
 RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
     nix-channel --update
 
-# Install dev tools via nix
-RUN nix profile add nixpkgs#gitMinimal nixpkgs#jq nixpkgs#ripgrep nixpkgs#fd nixpkgs#gnumake \
-    nixpkgs#zellij nixpkgs#cacert nixpkgs#less nixpkgs#ncurses nixpkgs#tree nixpkgs#bash nixpkgs#curl nixpkgs#gnutar \
-    nixpkgs#nodejs nixpkgs#opencode nixpkgs#unzip nixpkgs#gnused --priority 4
-
-ENV NIXPKGS_ALLOW_UNFREE=1
-RUN nix profile add nixpkgs#claude-code --priority 4 --impure
+# Install all dev tools via nix in a single profile generation. packages.nix is
+# the source of truth for the tool set; it imports the version-pinned claude-code.nix and codex.nix.
+# --priority resolves collisions against packages already present in the base image's profile.
+COPY packages.nix claude-code.nix codex.nix /tmp/nix/
+RUN nix profile add --priority 4 -f /tmp/nix/packages.nix
 
 # Set up XDG directories for proper config loading
 ENV XDG_CONFIG_HOME=/root/.config
