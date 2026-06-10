@@ -102,28 +102,30 @@ Two named volumes survive across container runs and are shared by all projects:
 
 Use `make clean-nix-store` / `make clean-pnpm-store` to wipe them.
 
-## Per-project Secrets
+## Secrets
 
 For credentials a project needs — a private-registry `.npmrc`, a `.env`, a deploy token,
-cloud creds — use `agents load-secret`. It stores the file as a podman secret scoped to that
-project and mounts it (read-only) only into that project's agent shell.
+cloud creds — use `agents load-secret`. It stores the file as a podman secret and mounts it
+(read-only) into the agent shell. By default a secret is scoped to **one project** and mounts
+only into that project's shell; `--global` mounts it into **every** project's shell.
 
 ```bash
 cd ~/src/my-project
-agents load-secret ~/.npmrc --target /root/.npmrc   # private registry tokens
-agents load-secret ./.env                           # mounts at /root/.env
+agents load-secret ./.env                           # this project, mounts at /root/.env
 agents load-secret ./gh-token --target /root/.config/gh/hosts.yml
 agents load-secret ~/secrets/key --project ~/src/other
+agents load-secret ~/.npmrc --target /root/.npmrc --global   # all projects
 ```
 
 Options: `--target PATH` sets the in-container mount path (default `/root/<filename>`);
 `--name NAME` sets the secret key (default the filename); `--project DIR` picks the project
-(default the current directory). Re-loading the same name replaces it, so that's also how you
-rotate.
+(default the current directory); `--global` scopes it to all projects (mutually exclusive with
+`--project`). Re-loading the same name replaces it, so that's also how you rotate.
 
-Under the hood each secret is a podman secret named `agent-<project-hash>-<name>` with the
-mount target stored in a label; `agents enter` mounts every secret matching the current
-project's hash. Inspect or remove them with plain podman:
+Under the hood each secret is a podman secret named `agent-<project-hash>-<name>` (or
+`agent-global-<name>`) with the mount target stored in a label; `agents enter` mounts this
+project's secrets plus all globals. If a project secret and a global one share a target, the
+project one wins. Inspect or remove them with plain podman:
 
 ```bash
 podman secret ls

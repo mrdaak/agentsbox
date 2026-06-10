@@ -3,16 +3,25 @@ NIX_VOLUME := agent-nix-store
 PNPM_VOLUME := agent-pnpm-store
 WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
 CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
-# Per-project secrets loaded via `agents load-secret`. Their names are prefixed
-# with this project's workdir hash (agent-<hash>-<name>); the mount target is
-# stored in the agents.target label. (`podman secret ls` has no label filter,
-# so we match by name prefix, then read the target via inspect.) Mount each
-# read-only at its recorded target.
-SECRET_FLAGS := $(shell podman secret ls --format '{{.Name}}' 2>/dev/null | \
-	grep "^agent-$(WORKDIR_HASH)-" | \
-	while read -r n; do \
+# Secrets loaded via `agents load-secret`. Names are prefixed with either this
+# project's workdir hash (agent-<hash>-<name>, mounted only here) or "global"
+# (agent-global-<name>, mounted everywhere); the mount target is stored in the
+# agents.target label. (`podman secret ls` has no label filter, so we match by
+# name prefix, then read the target via inspect.) Project secrets are listed
+# first so that if a project and a global secret share a target, the project one
+# wins and the duplicate is skipped (podman rejects two mounts at one path).
+# NOTE: avoid `case`/`)` and any unbalanced paren in this $(shell ...) — make
+# does paren-matching and an unbalanced `)` truncates the command. The grep is
+# the seen-target dedup (paren-free).
+SECRET_FLAGS := $(shell { \
+		podman secret ls --format '{{.Name}}' 2>/dev/null | grep "^agent-$(WORKDIR_HASH)-"; \
+		podman secret ls --format '{{.Name}}' 2>/dev/null | grep "^agent-global-"; \
+	} | while read -r n; do \
 		t=$$(podman secret inspect "$$n" --format '{{index .Spec.Labels "agents.target"}}' 2>/dev/null); \
-		[ -n "$$t" ] && printf -- '--secret %s,target=%s,mode=0400 ' "$$n" "$$t"; \
+		[ -z "$$t" ] && continue; \
+		printf '%s' "$$seen" | grep -qF " $$t " && continue; \
+		seen="$$seen $$t "; \
+		printf -- '--secret %s,target=%s,mode=0400 ' "$$n" "$$t"; \
 	done)
 
 SHELL := /usr/bin/env bash

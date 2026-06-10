@@ -34,6 +34,7 @@ Options for 'load-secret' (agents load-secret <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
   --project DIR  Project the secret belongs to (default: current directory)
+  --global       Mount in every project's agent shell (not just one project)
 EOF
 }
 
@@ -61,47 +62,64 @@ cmd_list() {
 }
 
 cmd_load_secret() {
-    local file="" name="" target="" project="$PWD"
+    local file="" name="" target="" project="$PWD" project_set="" global=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --target)  target="$2"; shift 2 ;;
             --name)    name="$2"; shift 2 ;;
-            --project) project="$2"; shift 2 ;;
+            --project) project="$2"; project_set=1; shift 2 ;;
+            --global)  global=1; shift ;;
             -*)        echo "load-secret: unknown option: $1" >&2; exit 1 ;;
             *)         file="$1"; shift ;;
         esac
     done
 
     if [[ -z "$file" ]]; then
-        echo "usage: agents load-secret <file> [--target PATH] [--name NAME] [--project DIR]" >&2
+        echo "usage: agents load-secret <file> [--target PATH] [--name NAME] [--project DIR | --global]" >&2
         exit 1
     fi
     [[ -f "$file" ]] || { echo "load-secret: no such file: $file" >&2; exit 1; }
-    [[ -d "$project" ]] || { echo "load-secret: no such project dir: $project" >&2; exit 1; }
+    if [[ -n "$global" && -n "$project_set" ]]; then
+        echo "load-secret: --global and --project are mutually exclusive" >&2
+        exit 1
+    fi
 
-    # Canonicalize to match the WORKDIR string the Makefile hashes (it uses $PWD
-    # passed by `enter`), so the project hash lines up at run time.
-    project="$(cd "$project" && pwd)"
-    local hash base
-    hash="$(sha1_8 "$project")"
+    local base secret
     base="$(basename "$file")"
     [[ -n "$name" ]]   || name="$base"
     [[ -n "$target" ]] || target="/root/$base"
 
-    local secret="agent-$hash-$name"
+    if [[ -n "$global" ]]; then
+        # Distinct prefix (a project hash is 8 hex chars, never "global") so the
+        # run step can mount globals into every project's shell.
+        secret="agent-global-$name"
+    else
+        [[ -d "$project" ]] || { echo "load-secret: no such project dir: $project" >&2; exit 1; }
+        # Canonicalize to match the WORKDIR string the Makefile hashes (it uses
+        # $PWD passed by `enter`), so the project hash lines up at run time.
+        project="$(cd "$project" && pwd)"
+        secret="agent-$(sha1_8 "$project")-$name"
+    fi
+
     # Re-loading replaces an existing secret of the same name (podman secrets
     # are immutable, so remove then recreate).
     podman secret rm "$secret" >/dev/null 2>&1 || true
-    podman secret create \
-        --label agents.managed=true \
-        --label "agents.project=$hash" \
-        --label "agents.projectdir=$project" \
-        --label "agents.target=$target" \
-        "$secret" "$file" >/dev/null
+
+    local scope_labels=(--label "agents.target=$target")
+    if [[ -n "$global" ]]; then
+        scope_labels+=(--label agents.scope=global)
+    else
+        scope_labels+=(--label agents.scope=project --label "agents.projectdir=$project")
+    fi
+    podman secret create --label agents.managed=true "${scope_labels[@]}" "$secret" "$file" >/dev/null
 
     echo "Loaded secret '$secret'"
-    echo "  project: $project"
-    echo "  mounts at: $target (read-only, in that project's agent shell)"
+    if [[ -n "$global" ]]; then
+        echo "  mounts at: $target (read-only, in ALL agent shells)"
+    else
+        echo "  project: $project"
+        echo "  mounts at: $target (read-only, in that project's agent shell)"
+    fi
 }
 
 cmd_update() {
