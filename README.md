@@ -64,15 +64,6 @@ Each invocation mounts:
 | `agent-nix-store` (volume)      | `/nix`                               |
 | `agent-pnpm-store` (volume)     | `/pnpm-store`                        |
 
-## Persistent Stores
-
-Two named volumes survive across container runs and are shared by all projects:
-
-- **`agent-nix-store`** — the `/nix` store so packages don't re-download on every run.
-- **`agent-pnpm-store`** — the pnpm content-addressable store at `/pnpm-store`. Configured via `/root/.config/pnpm/config.yaml` (`storeDir`, `packageImportMethod: copy`). Copy mode avoids cross-filesystem hardlink issues between the volume and the bind-mounted `/workspace`.
-
-Use `make clean-nix-store` / `make clean-pnpm-store` to wipe them.
-
 ## Secrets
 
 For credentials a project needs — a private-registry `.npmrc`, a `.env`, a deploy token,
@@ -87,11 +78,6 @@ agentsbox load-secret ./gh-token --target /root/.config/gh/hosts.yml
 agentsbox load-secret ~/secrets/key --project ~/src/other
 agentsbox load-secret ~/.npmrc --target /root/.npmrc --global   # all projects
 ```
-
-Options: `--target PATH` sets the in-container mount path (default `/root/<filename>`);
-`--name NAME` sets the secret key (default the filename); `--project DIR` picks the project
-(default the current directory); `--global` scopes it to all projects (mutually exclusive with
-`--project`). Re-loading the same name replaces it, so that's also how you rotate.
 
 If a project secret and a global one share a target, the project one wins.
 Inspect or remove them with plain podman:
