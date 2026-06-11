@@ -1,0 +1,149 @@
+#!/usr/bin/env node
+// listen-message — minimal A2A server for agentsbox.
+//
+// Speaks the JSON-RPC 2.0 binding of the A2A protocol over HTTP, just enough
+// for the "send a message, get an answer" case:
+//   - GET  /.well-known/agent-card.json  -> this agent's Agent Card
+//   - POST /                             -> a `message/send` request
+//
+// On `message/send` it concatenates the text parts of the incoming message,
+// runs the local coding agent headlessly over /workspace, and returns the
+// agent's stdout as a JSON-RPC result Message (role "agent").
+//
+// Uses only the Node stdlib `http` module — no dependencies. Started in the
+// background by shell-entrypoint when A2A_ENABLED=1.
+
+'use strict';
+
+const http = require('http');
+const { spawn } = require('child_process');
+const { randomUUID } = require('crypto');
+
+const PORT = parseInt(process.env.A2A_PORT || '4096', 10);
+const AGENT_NAME = process.env.AGENT_NAME || require('os').hostname();
+// The local agent invocation. Defaults to Claude Code's headless mode.
+// A2A_AGENT_BIN/A2A_AGENT_ARGS let you swap in `opencode run`, etc.
+const AGENT_BIN = process.env.A2A_AGENT_BIN || 'claude';
+const AGENT_ARGS = (process.env.A2A_AGENT_ARGS || '-p').split(' ').filter(Boolean);
+const TIMEOUT_MS = parseInt(process.env.A2A_TIMEOUT_MS || '240000', 10);
+const WORKDIR = process.env.A2A_WORKDIR || '/workspace';
+
+const AGENT_CARD = {
+  name: `${AGENT_NAME}-agent`,
+  description: `agentsbox agent for the ${AGENT_NAME} project`,
+  url: `http://${AGENT_NAME}:${PORT}/`,
+  version: '0.1.0',
+  capabilities: { streaming: false, pushNotifications: false },
+  defaultInputModes: ['text/plain'],
+  defaultOutputModes: ['text/plain'],
+  skills: [
+    {
+      id: 'ask',
+      name: 'ask',
+      description: `Answer questions about the ${AGENT_NAME} codebase`,
+    },
+  ],
+};
+
+function sendJson(res, status, body) {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(payload),
+  });
+  res.end(payload);
+}
+
+function rpcError(res, id, code, message) {
+  sendJson(res, 200, { jsonrpc: '2.0', id: id ?? null, error: { code, message } });
+}
+
+// Run the local agent with `prompt` on stdin's behalf and resolve its stdout.
+function runAgent(prompt) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(AGENT_BIN, [...AGENT_ARGS, prompt], {
+      cwd: WORKDIR,
+      env: process.env,
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`agent timed out after ${TIMEOUT_MS}ms`));
+    }, TIMEOUT_MS);
+
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`agent exited ${code}: ${stderr.trim() || stdout.trim()}`));
+    });
+  });
+}
+
+function textFromMessage(message) {
+  if (!message || !Array.isArray(message.parts)) return '';
+  return message.parts
+    .filter((p) => p && (p.kind === 'text' || typeof p.text === 'string'))
+    .map((p) => p.text || '')
+    .join('\n')
+    .trim();
+}
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url.startsWith('/.well-known/agent-card.json')) {
+    return sendJson(res, 200, AGENT_CARD);
+  }
+
+  if (req.method !== 'POST') {
+    return rpcError(res, null, -32600, 'expected POST of a JSON-RPC request');
+  }
+
+  let raw = '';
+  req.on('data', (c) => (raw += c));
+  req.on('end', async () => {
+    let rpc;
+    try {
+      rpc = JSON.parse(raw);
+    } catch {
+      return rpcError(res, null, -32700, 'parse error: body is not valid JSON');
+    }
+
+    const id = rpc.id ?? null;
+    if (rpc.jsonrpc !== '2.0') {
+      return rpcError(res, id, -32600, 'invalid request: jsonrpc must be "2.0"');
+    }
+    if (rpc.method !== 'message/send') {
+      return rpcError(res, id, -32601, `method not found: ${rpc.method} (only message/send)`);
+    }
+
+    const prompt = textFromMessage(rpc.params && rpc.params.message);
+    if (!prompt) {
+      return rpcError(res, id, -32602, 'invalid params: message has no text parts');
+    }
+
+    try {
+      const answer = await runAgent(prompt);
+      return sendJson(res, 200, {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          messageId: randomUUID(),
+          role: 'agent',
+          parts: [{ kind: 'text', text: answer }],
+        },
+      });
+    } catch (err) {
+      return rpcError(res, id, -32000, `agent error: ${err.message}`);
+    }
+  });
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`A2A listener for "${AGENT_NAME}" on 0.0.0.0:${PORT} (agent: ${AGENT_BIN} ${AGENT_ARGS.join(' ')})`);
+});

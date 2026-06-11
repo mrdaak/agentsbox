@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# send-message — A2A client for agentsbox.
+#
+# POSTs a JSON-RPC 2.0 `message/send` request to another agent on the shared
+# agentsbox network and prints the answer text.
+#
+#   send-message <agent-name> <text...>
+#
+# Example (from repo1's agent shell):
+#   send-message repo2 "How does repo2 authenticate API calls?"
+#
+# The target is reached at http://<agent-name>:<A2A_PORT>/ over the
+# agentsbox-net podman network. Requires the target container to be running
+# with A2A enabled (agentsbox enter --a2a).
+set -euo pipefail
+
+PORT="${A2A_PORT:-4096}"
+
+if [[ $# -lt 2 ]]; then
+    echo "usage: send-message <agent-name> <text...>" >&2
+    exit 1
+fi
+
+agent="$1"
+shift
+text="$*"
+url="http://${agent}:${PORT}/"
+
+# A fresh message id per request (Linux kernel UUID source — always present).
+msg_id="$(cat /proc/sys/kernel/random/uuid)"
+
+# Build the JSON-RPC envelope with jq so the text is escaped safely.
+request="$(jq -n --arg id "$msg_id" --arg text "$text" '{
+    jsonrpc: "2.0",
+    id: 1,
+    method: "message/send",
+    params: {
+        message: {
+            messageId: $id,
+            role: "user",
+            parts: [ { kind: "text", text: $text } ]
+        }
+    }
+}')"
+
+response="$(curl -sS --fail-with-body \
+    -X POST "$url" \
+    -H 'content-type: application/json' \
+    -d "$request")" || {
+    echo "send-message: could not reach agent '$agent' at $url" >&2
+    echo "  (is its container running with: agentsbox enter --a2a ?)" >&2
+    exit 1
+}
+
+# Surface a JSON-RPC error, otherwise print the concatenated answer text.
+if echo "$response" | jq -e 'has("error")' >/dev/null 2>&1; then
+    echo "send-message: agent '$agent' returned an error:" >&2
+    echo "$response" | jq -r '.error | "  [\(.code)] \(.message)"' >&2
+    exit 1
+fi
+
+echo "$response" | jq -r '.result.parts[]? | select(.text) | .text'

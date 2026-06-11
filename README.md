@@ -1,8 +1,11 @@
-# Agent sandbox
+%title: agentsbox - Agent sandbox shell
+
+agentsbox
+==================
 
 Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
 
-``` bash
+```bash
 cd project1
 agentsbox enter
 ```
@@ -17,12 +20,14 @@ Agents state persists across runs! Skills, MCPs - all there!
 But of what use is an agent kept in the dark?! Every once in a while you might want agent to have access to a secret from host OS.
 For example NPM token. We can do that:
 
-``` bash
+```bash
 # while in project1 dir
 agentsbox load-secret ~/.npmrc
 ```
 
 ...and project(1) now has `.npmrc` access in the sandbox.
+
+---
 
 ## Install
 
@@ -36,34 +41,20 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 
 ## Commands
 
-| Command          | Description                                                |
-| ---------------- | ---------------------------------------------------------- |
-| `agentsbox enter`   | Enter an agent shell in the current directory              |
-| `agentsbox list`    | List running agent containers (pass `-a` for stopped too)  |
-| `agentsbox load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell |
-| `agentsbox list-secrets` | List the secrets mounted into a project's agent shell      |
-| `agentsbox update`  | Pull the latest base image and rebuild the container       |
-| `agentsbox doctor`  | Check host environment for required tooling                |
-| `agentsbox help`    | Show usage                                                 |
+| Command                        | Description                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `agentsbox enter`              | Enter an agent shell in the current directory                                     |
+| `agentsbox list`               | List running agent containers (pass `-a` for stopped too)                         |
+| `agentsbox load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell              |
+| `agentsbox list-secrets`       | List the secrets mounted into a project's agent shell                             |
+| `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
+| `agentsbox update`             | Pull the latest base image and rebuild the container                              |
+| `agentsbox doctor`             | Check host environment for required tooling                                       |
+| `agentsbox help`               | Show usage                                                                        |
 
-## Volume Mounts
+`agentsbox enter --a2a` (enable [agent-to-agent messaging](#agent-to-agent-messaging-a2a)).
 
-Each invocation mounts:
-
-| Host path                       | Container path                       |
-| ------------------------------- | ------------------------------------ |
-| `$(WORKDIR)`                    | `/workspace`                         |
-| bundled Zellij config           | `/root/.config/zellij/config.kdl`    |
-| `~/.agents`                     | `/root/.agents`                      |
-| `~/.opencode/config`            | `/root/.config/opencode`             |
-| `~/.opencode/data`              | `/root/.local/share/opencode`        |
-| `~/.claude`                     | `/root/.claude`                      |
-| `~/.claude.json`                | `/root/.claude.json`                 |
-| `~/.codex`                      | `/root/.codex`                       |
-| `~/.config/codex`               | `/root/.config/codex`                |
-| `~/.local/share/codex`          | `/root/.local/share/codex`           |
-| `agent-nix-store` (volume)      | `/nix`                               |
-| `agent-pnpm-store` (volume)     | `/pnpm-store`                        |
+---
 
 ## Secrets
 
@@ -88,14 +79,18 @@ podman secret ls
 podman secret rm agent-<hash>-<name>
 ```
 
+---
+
 ## Automatic project setup with Nix
 
 If your project has `flake.nix`, on `enter` the sandbox spots it and offers
-to load so you get the exact/reproducable developer toolchain (no "works on my machine"):
+to load so you get the exact/reproducible developer toolchain (no "works on my machine"):
 
 ```bash
 Detected flake.nix. Load nix environment? [Y/n]:
 ```
+
+---
 
 ## Work on two features at once
 
@@ -108,9 +103,35 @@ git worktree add ../wt1            # new branch + dir at /wt1
 
 Done? `git merge wt1` and `git worktree remove wt1`.
 
+---
+
+## Agent-to-agent messaging (A2A)
+
+An agent working in one project can ask the agent in another project a question.
+This is a minimal subset of the [A2A protocol](https://a2a-protocol.org/) —
+JSON-RPC 2.0 `message/send` over HTTP — wired between containers.
+
+Start each project's shell with `--a2a`:
+
+```bash
+# terminal A
+cd ~/src/repo2 && agentsbox enter --a2a      # listens as "repo2"
+
+# terminal B
+cd ~/src/repo1 && agentsbox enter --a2a
+```
+
+---
+
 ## Security
 
-- **Rootless Podman** — container root maps to your unprivileged host UID
+- **Containers**
+  - **lightweight**
+  - **isolated**: vulnerability in 1 container is isolated from other parts
+  - **short-lived**: frequently rebuilt from version-controlled sources
 - **Ephemeral** (`--rm`) — containers are destroyed after each session
-- **Workspace-only** — the agent sees `/workspace` plus the explicitly-listed config mounts (see [Volume Mounts](#volume-mounts)), nothing else
-- **`no-new-privileges`** — prevents privilege escalation inside the container
+> Ephemeral means that the container can be stopped and destroyed,
+> then rebuilt and replaced with an absolute minimum set up and configuration.
+[Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers)
+- **Workspace-only** — the agent sees `/workspace` plus the explicitly-listed config mounts, nothing else
+- **no-new-privileges** — flag prevents privilege escalation inside the container

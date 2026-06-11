@@ -24,12 +24,16 @@ Subcommands:
   list           List running agent containers (pass -a for stopped too)
   load-secret    Load a file as a podman secret for a project's agent shell
   list-secrets   List secrets mounted in a project's agent shell
+  install-skills Install agentsbox's bundled skills into ~/.agents/skills
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
   help           Show this message
 
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
+  --a2a          Enable agent-to-agent messaging (start the A2A listener and
+                 join the shared agentsbox-net network)
+  --name NAME    A2A agent alias other agents address (default: dir basename)
 
 Options for 'load-secret' (agentsbox load-secret <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
@@ -44,18 +48,32 @@ EOF
 }
 
 cmd_enter() {
-    local auth=""
+    local auth="" a2a="" agent_name=""
     local args=()
-    for arg in "$@"; do
-        if [[ "$arg" == "--auth" ]]; then
-            auth=1
-        else
-            args+=("$arg")
-        fi
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --auth) auth=1; shift ;;
+            --a2a)  a2a=1; shift ;;
+            --name) agent_name="$2"; shift 2 ;;
+            *)      args+=("$1"); shift ;;
+        esac
     done
+
+    # Default the A2A agent alias to the project directory's basename.
+    [[ -n "$agent_name" ]] || agent_name="$(basename "$PWD")"
+
+    if [[ -n "$a2a" ]]; then
+        # The shared user-defined network gives containers DNS-based name
+        # resolution, so agents reach each other by alias on a fixed port.
+        podman network exists agentsbox-net >/dev/null 2>&1 \
+            || podman network create agentsbox-net >/dev/null
+    fi
+
     exec make -f "$SCRIPT_DIR/Makefile" run \
         WORKDIR="$PWD" \
         AUTH="$auth" \
+        A2A="$a2a" \
+        AGENT_NAME="$agent_name" \
         ARGS="${args[*]:-}"
 }
 
@@ -131,6 +149,38 @@ cmd_list_secrets() {
     exec "$SCRIPT_DIR/bin/list-secrets" "$@"
 }
 
+cmd_install_skills() {
+    # Skills bundled with agentsbox live in <repo>/skills/<name>/SKILL.md. The
+    # shared store is ~/.agents/skills (mounted into every sandbox); Claude Code
+    # discovers a skill via a relative symlink in ~/.claude/skills that points
+    # back into that store. This mirrors how `find-skills` installs itself, and
+    # the relative symlink resolves the same on the host and in the container
+    # (both dirs are siblings under home).
+    local src="$SCRIPT_DIR/skills"
+    local store="$HOME/.agents/skills"
+    local claude_dir="$HOME/.claude/skills"
+
+    [[ -d "$src" ]] || { echo "install-skills: no skills/ dir at $src" >&2; exit 1; }
+    mkdir -p "$store" "$claude_dir"
+
+    local found=""
+    for skill in "$src"/*/; do
+        [[ -f "${skill}SKILL.md" ]] || continue
+        local name
+        name="$(basename "$skill")"
+
+        # Copy overwrites existing files in place; ln -sfn replaces the symlink.
+        # No removal needed — a re-install just updates what's there.
+        cp -R "${skill%/}" "$store/"
+        ln -sfn "../../.agents/skills/$name" "$claude_dir/$name"
+        echo "Installed skill '$name'"
+        found=1
+    done
+
+    [[ -n "$found" ]] || { echo "install-skills: no skills found in $src" >&2; exit 1; }
+    echo "Done. Start a fresh sandbox session to pick them up."
+}
+
 cmd_update() {
     exec make -f "$SCRIPT_DIR/Makefile" update
 }
@@ -150,6 +200,7 @@ case "$1" in
     list)           shift; cmd_list "$@" ;;
     load-secret)    shift; cmd_load_secret "$@" ;;
     list-secrets)   shift; cmd_list_secrets "$@" ;;
+    install-skills) shift; cmd_install_skills "$@" ;;
     update)         shift; cmd_update ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;

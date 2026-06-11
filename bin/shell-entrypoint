@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -e
 
+# Start the A2A listener once, before any nix re-exec. The pidfile guards
+# against the double-start that would otherwise happen when this script
+# re-execs itself through `nix develop --command "$0"`. node and the local
+# agent come from the image's global nix profile, so they are on PATH here
+# regardless of whether a project dev shell is loaded.
+if [ "${A2A_ENABLED:-}" = "1" ] && [ ! -f /tmp/a2a-listener.pid ]; then
+    listen-message >/tmp/a2a.log 2>&1 &
+    echo $! > /tmp/a2a-listener.pid
+fi
+
 if [ -n "$IN_NIX_SHELL" ]; then
     exec zellij attach --create
 fi

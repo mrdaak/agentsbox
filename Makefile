@@ -27,6 +27,10 @@ SECRET_FLAGS := $(shell { \
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
 
+# A2A agent alias other containers address us by (default: workdir basename).
+# `agentsbox enter --a2a` passes A2A=1 and AGENT_NAME explicitly.
+AGENT_NAME ?= $(notdir $(WORKDIR))
+
 .PHONY: shell build update run clean-nix-store clean-pnpm-store doctor
 
 shell:
@@ -60,6 +64,8 @@ endif
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
 		-p 4096 \
 		$(if $(AUTH),-p 1455:1455) \
+		$(if $(A2A),--network agentsbox-net --network-alias $(AGENT_NAME)) \
+		$(if $(A2A),-e A2A_ENABLED=1 -e AGENT_NAME=$(AGENT_NAME)) \
 		-v ~/.claude:/root/.claude:Z \
 		-v ~/.claude.json:/root/.claude.json:Z \
 		-v ~/.codex:/root/.codex:Z \

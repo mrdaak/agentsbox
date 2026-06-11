@@ -29,9 +29,15 @@ RUN mkdir -p /root/.config/pnpm \
 # Allow git to work on mounted repositories in /workspace
 RUN git config --system safe.directory /workspace
 
-# Copy entrypoint script
-COPY bin/shell-entrypoint /usr/local/bin/
-RUN chmod +x /usr/local/bin/shell-entrypoint
+# Copy entrypoint and A2A scripts onto PATH. The nix base image ships a minimal
+# PATH that does not include /usr/local/bin, so add it explicitly — otherwise the
+# entrypoint can't find `listen-message` and `send-message` is unreachable in the
+# shell.
+COPY bin/shell-entrypoint bin/listen-message bin/send-message /usr/local/bin/
+RUN chmod +x /usr/local/bin/shell-entrypoint \
+             /usr/local/bin/listen-message \
+             /usr/local/bin/send-message
+ENV PATH=/usr/local/bin:$PATH
 
 WORKDIR /workspace
 
