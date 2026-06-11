@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentsbox — dispatcher for enter / list / load-secret / update / doctor
+# agentsbox — dispatcher for enter / list / load-secret / list-secrets / update / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,6 +23,7 @@ Subcommands:
   enter          Enter an agent shell in the current directory
   list           List running agent containers (pass -a for stopped too)
   load-secret    Load a file as a podman secret for a project's agent shell
+  list-secrets   List secrets mounted in a project's agent shell
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
   help           Show this message
@@ -35,6 +36,10 @@ Options for 'load-secret' (agentsbox load-secret <file> [options]):
   --name NAME    Secret key (default: <filename>); re-loading replaces it
   --project DIR  Project the secret belongs to (default: current directory)
   --global       Mount in every project's agent shell (not just one project)
+
+Options for 'list-secrets':
+  --project DIR  Project to list secrets for (default: current directory)
+  --global       List only global secrets (mounted in every project)
 EOF
 }
 
@@ -122,6 +127,10 @@ cmd_load_secret() {
     fi
 }
 
+cmd_list_secrets() {
+    exec "$SCRIPT_DIR/bin/list-secrets" "$@"
+}
+
 cmd_update() {
     exec make -f "$SCRIPT_DIR/Makefile" update
 }
@@ -140,6 +149,7 @@ case "$1" in
     run)            shift; cmd_enter "$@" ;; # alias for enter (backwards compat)
     list)           shift; cmd_list "$@" ;;
     load-secret)    shift; cmd_load_secret "$@" ;;
+    list-secrets)   shift; cmd_list_secrets "$@" ;;
     update)         shift; cmd_update ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;

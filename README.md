@@ -41,6 +41,7 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 | `agentsbox enter`   | Enter an agent shell in the current directory              |
 | `agentsbox list`    | List running agent containers (pass `-a` for stopped too)  |
 | `agentsbox load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell |
+| `agentsbox list-secrets` | List the secrets mounted into a project's agent shell      |
 | `agentsbox update`  | Pull the latest base image and rebuild the container       |
 | `agentsbox doctor`  | Check host environment for required tooling                |
 | `agentsbox help`    | Show usage                                                 |
