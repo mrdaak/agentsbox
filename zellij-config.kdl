@@ -1,3 +1,4 @@
 default_mode "locked"
 show_release_notes false
 show_startup_tips false
+session_name "agentsbox"

@@ -87,9 +87,29 @@ podman secret ls
 podman secret rm agent-<hash>-<name>
 ```
 
+## Automatic project setup with Nix
+
+If your project has `flake.nix`, on `enter` the sandbox spots it and offers
+to load so you get the exact/reproducable developer toolchain (no "works on my machine"):
+
+```bash
+Detected flake.nix. Load nix environment? [Y/n]:
+```
+
+## Work on two features at once
+
+Use **git worktrees** and hack on parallel features side by side, each on its own branch:
+
+```bash
+# inside the sandbox
+git worktree add ../wt1            # new branch + dir at /wt1
+```
+
+Done? `git merge wt1` and `git worktree remove wt1`.
+
 ## Security
 
 - **Rootless Podman** — container root maps to your unprivileged host UID
 - **Ephemeral** (`--rm`) — containers are destroyed after each session
-- **Workspace-only** — the agent only sees the directory you mounted
+- **Workspace-only** — the agent sees `/workspace` plus the explicitly-listed config mounts (see [Volume Mounts](#volume-mounts)), nothing else
 - **`no-new-privileges`** — prevents privilege escalation inside the container
