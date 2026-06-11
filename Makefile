@@ -3,7 +3,7 @@ NIX_VOLUME := agent-nix-store
 PNPM_VOLUME := agent-pnpm-store
 WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
 CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
-# Secrets loaded via `agents load-secret`. Names are prefixed with either this
+# Secrets loaded via `agentsbox load-secret`. Names are prefixed with either this
 # project's workdir hash (agent-<hash>-<name>, mounted only here) or "global"
 # (agent-global-<name>, mounted everywhere); the mount target is stored in the
 # agents.target label. (`podman secret ls` has no label filter, so we match by
@@ -54,6 +54,7 @@ endif
 		-e OPENCODE_CONFIG_DIR=/root/.config/opencode \
 		-v $(NIX_VOLUME):/nix \
 		-v $(PNPM_VOLUME):/pnpm-store \
+		-v ${ROOT_PATH}/zellij-config.kdl:/root/.config/zellij/config.kdl:Z,ro \
 		-v ~/.agents:/root/.agents:Z \
 		-v ~/.opencode/config:/root/.config/opencode:Z \
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \

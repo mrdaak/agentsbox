@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agents — dispatcher for enter / list / load-secret / update / doctor
+# agentsbox — dispatcher for enter / list / load-secret / update / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +17,7 @@ sha1_8() {
 
 usage() {
     cat <<EOF
-Usage: agents <subcommand> [options]
+Usage: agentsbox <subcommand> [options]
 
 Subcommands:
   enter          Enter an agent shell in the current directory
@@ -30,7 +30,7 @@ Subcommands:
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
 
-Options for 'load-secret' (agents load-secret <file> [options]):
+Options for 'load-secret' (agentsbox load-secret <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
   --project DIR  Project the secret belongs to (default: current directory)
@@ -75,7 +75,7 @@ cmd_load_secret() {
     done
 
     if [[ -z "$file" ]]; then
-        echo "usage: agents load-secret <file> [--target PATH] [--name NAME] [--project DIR | --global]" >&2
+        echo "usage: agentsbox load-secret <file> [--target PATH] [--name NAME] [--project DIR | --global]" >&2
         exit 1
     fi
     [[ -f "$file" ]] || { echo "load-secret: no such file: $file" >&2; exit 1; }

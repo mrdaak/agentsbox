@@ -38,12 +38,12 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 
 | Command          | Description                                                |
 | ---------------- | ---------------------------------------------------------- |
-| `agents enter`   | Enter an agent shell in the current directory              |
-| `agents list`    | List running agent containers (pass `-a` for stopped too)  |
-| `agents load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell |
-| `agents update`  | Pull the latest base image and rebuild the container       |
-| `agents doctor`  | Check host environment for required tooling                |
-| `agents help`    | Show usage                                                 |
+| `agentsbox enter`   | Enter an agent shell in the current directory              |
+| `agentsbox list`    | List running agent containers (pass `-a` for stopped too)  |
+| `agentsbox load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell |
+| `agentsbox update`  | Pull the latest base image and rebuild the container       |
+| `agentsbox doctor`  | Check host environment for required tooling                |
+| `agentsbox help`    | Show usage                                                 |
 
 ## Volume Mounts
 
@@ -52,6 +52,7 @@ Each invocation mounts:
 | Host path                       | Container path                       |
 | ------------------------------- | ------------------------------------ |
 | `$(WORKDIR)`                    | `/workspace`                         |
+| bundled Zellij config           | `/root/.config/zellij/config.kdl`    |
 | `~/.agents`                     | `/root/.agents`                      |
 | `~/.opencode/config`            | `/root/.config/opencode`             |
 | `~/.opencode/data`              | `/root/.local/share/opencode`        |
@@ -75,16 +76,16 @@ Use `make clean-nix-store` / `make clean-pnpm-store` to wipe them.
 ## Secrets
 
 For credentials a project needs — a private-registry `.npmrc`, a `.env`, a deploy token,
-cloud creds — use `agents load-secret`. It stores the file as a podman secret and mounts it
+cloud creds — use `agentsbox load-secret`. It stores the file as a podman secret and mounts it
 (read-only) into the agent shell. By default a secret is scoped to **one project** and mounts
 only into that project's shell; `--global` mounts it into **every** project's shell.
 
 ```bash
 cd ~/src/my-project
-agents load-secret ./.env                           # this project, mounts at /root/.env
-agents load-secret ./gh-token --target /root/.config/gh/hosts.yml
-agents load-secret ~/secrets/key --project ~/src/other
-agents load-secret ~/.npmrc --target /root/.npmrc --global   # all projects
+agentsbox load-secret ./.env                           # this project, mounts at /root/.env
+agentsbox load-secret ./gh-token --target /root/.config/gh/hosts.yml
+agentsbox load-secret ~/secrets/key --project ~/src/other
+agentsbox load-secret ~/.npmrc --target /root/.npmrc --global   # all projects
 ```
 
 Options: `--target PATH` sets the in-container mount path (default `/root/<filename>`);

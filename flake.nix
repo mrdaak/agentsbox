@@ -20,8 +20,8 @@
           pkgs.coreutils
         ];
 
-        agents = pkgs.stdenv.mkDerivation {
-          pname = "agents";
+        agentsbox = pkgs.stdenv.mkDerivation {
+          pname = "agentsbox";
           version = "0.1.0";
           src = ./.;
 
@@ -34,23 +34,23 @@
             runHook preInstall
 
             mkdir -p $out/share/agents $out/bin
-            cp -r Makefile Containerfile bin $out/share/agents/
+            cp -r Makefile Containerfile bin zellij-config.kdl $out/share/agents/
             chmod +x $out/share/agents/bin/*
 
-            makeWrapper $out/share/agents/bin/agents $out/bin/agents \
+            makeWrapper $out/share/agents/bin/agentsbox $out/bin/agentsbox \
               --set AGENTS_TOOLS_DIR $out/share/agents \
               --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
 
             runHook postInstall
           '';
 
-          meta.mainProgram = "agents";
+          meta.mainProgram = "agentsbox";
         };
       in
       {
         packages = {
-          default = agents;
-          agents = agents;
+          default = agentsbox;
+          agentsbox = agentsbox;
         };
 
         devShells.default = pkgs.mkShell {
@@ -62,11 +62,11 @@
 
             echo ""
             echo "Available commands:"
-            echo "  agents enter        - Enter an agent shell in the current directory"
-            echo "  agents list         - List running agent containers"
-            echo "  agents load-secret  - Load a file as a podman secret for a project"
-            echo "  agents update       - Pull latest base image and rebuild"
-            echo "  agents doctor       - Check host environment for required tooling"
+            echo "  agentsbox enter        - Enter an agent shell in the current directory"
+            echo "  agentsbox list         - List running agent containers"
+            echo "  agentsbox load-secret  - Load a file as a podman secret for a project"
+            echo "  agentsbox update       - Pull latest base image and rebuild"
+            echo "  agentsbox doctor       - Check host environment for required tooling"
             echo ""
             echo "Manual make usage:"
             echo "  make run WORKDIR=~/src/my-project"
