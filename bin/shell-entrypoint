@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
+# Zellij names the session (shown in its UI and the terminal title as
+# "Zellij (<name>)"). Without an explicit name, `zellij attach --create`
+# generates a random one and ignores session_name from the config file, so we
+# pass it here. Derived from the agent name; sanitized to the chars Zellij
+# accepts in a session name.
+SESSION_NAME="$(printf '%s' "${AGENT_NAME:-$(basename "$PWD")}" | tr -c 'A-Za-z0-9_-' '-')"
+
 # Start the A2A listener once, before any nix re-exec. The pidfile guards
 # against the double-start that would otherwise happen when this script
 # re-execs itself through `nix develop --command "$0"`. node and the local
@@ -12,7 +19,7 @@ if [ "${A2A_ENABLED:-}" = "1" ] && [ ! -f /tmp/a2a-listener.pid ]; then
 fi
 
 if [ -n "$IN_NIX_SHELL" ]; then
-    exec zellij attach --create
+    exec zellij attach --create "$SESSION_NAME"
 fi
 
 ask_load() {
@@ -93,4 +100,4 @@ elif [ -f /workspace/shell.nix ]; then
     fi
 fi
 
-exec zellij attach --create
+exec zellij attach --create "$SESSION_NAME"

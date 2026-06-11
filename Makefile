@@ -64,8 +64,8 @@ endif
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
 		-p 4096 \
 		$(if $(AUTH),-p 1455:1455) \
-		$(if $(A2A),--network agentsbox-net --network-alias $(AGENT_NAME)) \
-		$(if $(A2A),-e A2A_ENABLED=1 -e AGENT_NAME=$(AGENT_NAME)) \
+		$(if $(A2A),--network agentsbox-net --network-alias $(AGENT_NAME)) -e A2A_ENABLED=1 \
+		-e AGENT_NAME=$(AGENT_NAME) \
 		-v ~/.claude:/root/.claude:Z \
 		-v ~/.claude.json:/root/.claude.json:Z \
 		-v ~/.codex:/root/.codex:Z \
