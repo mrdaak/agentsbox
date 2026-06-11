@@ -1,33 +1,38 @@
-# AI Agents with Podman
+# Agent sandbox
 
-Run AI coding agents (Claude Code, OpenCode, Codex) in a containerized environment with project-specific workspaces and dev tooling pre-installed. Built from `ghcr.io/nixos/nix:2.34.7` with all tools installed via Nix.
+Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
 
-## Prerequisites
+``` bash
+cd project1
+agentsbox enter
+```
 
-- [Nix](https://nixos.org/download/) with flakes enabled
-- A working Podman setup (rootless on Linux, `podman machine` on macOS). `podman` itself is bundled into the installed package, but the host-side service/VM is yours to manage.
+...and you are in a secure shell access-limited to the project(1). (green border = sandbox)
+
+now you can run and configure any of the named agents. But If you already have one configured on your host OS,
+sandbox will automatically pickup the configuration and you can continue from where you left of.
+
+Agents state persists across runs! Skills, MCPs - all there!
+
+But of what use is an agent kept in the dark?! Every once in a while you might want agent to have access to a secret from host OS.
+For example NPM token. We can do that:
+
+``` bash
+# while in project1 dir
+agentsbox load-secret ~/.npmrc
+```
+
+...and project(1) now has `.npmrc` access in the sandbox.
 
 ## Install
 
-```bash
-# Install from a local clone
-nix profile install /path/to/this/repo
-
-# ...or directly from a flake reference (once published)
-# nix profile install github:<org>/<repo>
-```
-
-This puts `agents` on your `PATH`. Run it from any project directory — that directory is mounted into the container.
+- [Nix](https://nixos.org/download/) with flakes enabled
 
 ```bash
-cd ~/src/my-project
-agents enter        # enter an agent shell in this directory
-agents list         # list running agent containers
-agents doctor       # check host environment
-agents update       # pull a fresh base image and rebuild
+nix profile install github:mrdakdev/agentsbox
 ```
 
-Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix profile remove agents`.
+This puts `agentsbox` on your `PATH`. Run it from any project directory — that directory is mounted into the container.
 
 ## Commands
 
@@ -39,39 +44,6 @@ Pick up flake changes with `nix profile upgrade agents`. Uninstall with `nix pro
 | `agents update`  | Pull the latest base image and rebuild the container       |
 | `agents doctor`  | Check host environment for required tooling                |
 | `agents help`    | Show usage                                                 |
-
-Running `agents` with no subcommand prints usage. `agents enter` (alias: `agents run`) accepts `--auth` to bind host port `1455:1455` for OpenCode auth flows.
-
-## Development
-
-To hack on this tool itself, use the dev shell instead of (or alongside) a profile install:
-
-```bash
-nix develop          # or: direnv allow (once)
-make run WORKDIR=~/src/my-project
-```
-
-The dev shell adds `bin/` to `PATH` so the same `agents` command resolves against the working tree rather than the Nix store.
-
-### Makefile Targets
-
-| Target             | Description                                                  |
-| ------------------ | ------------------------------------------------------------ |
-| `build`            | Build the container image                                    |
-| `update`           | Rebuild without cache                                        |
-| `run`              | Run the agent (requires `WORKDIR`)                           |
-| `doctor`           | Run `bin/doctor`                                             |
-| `clean-nix-store`  | Remove the persistent Nix store volume                       |
-| `clean-pnpm-store` | Remove the persistent pnpm store volume                      |
-
-## Run Flags
-
-| Variable | Purpose                                                                 |
-| -------- | ----------------------------------------------------------------------- |
-| `WORKDIR` | Required. Host directory mounted at `/workspace`                       |
-| `AUTH`    | If set, binds host port `1455:1455` for OpenCode auth flows            |
-
-Container names are derived from `WORKDIR` (`agent-<basename>-<hash>`), so multiple projects can run side-by-side without collision.
 
 ## Volume Mounts
 
@@ -90,8 +62,6 @@ Each invocation mounts:
 | `~/.local/share/codex`          | `/root/.local/share/codex`           |
 | `agent-nix-store` (volume)      | `/nix`                               |
 | `agent-pnpm-store` (volume)     | `/pnpm-store`                        |
-
-`XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `OPENCODE_CONFIG_DIR` are set automatically so each agent picks up its config from the expected paths.
 
 ## Persistent Stores
 
@@ -122,31 +92,13 @@ Options: `--target PATH` sets the in-container mount path (default `/root/<filen
 (default the current directory); `--global` scopes it to all projects (mutually exclusive with
 `--project`). Re-loading the same name replaces it, so that's also how you rotate.
 
-Under the hood each secret is a podman secret named `agent-<project-hash>-<name>` (or
-`agent-global-<name>`) with the mount target stored in a label; `agents enter` mounts this
-project's secrets plus all globals. If a project secret and a global one share a target, the
-project one wins. Inspect or remove them with plain podman:
+If a project secret and a global one share a target, the project one wins.
+Inspect or remove them with plain podman:
 
 ```bash
 podman secret ls
 podman secret rm agent-<hash>-<name>
 ```
-
-> Note: these are stored by podman's local (unencrypted) secret driver and mounted as
-> root-readable files inside the container. Fine for local dev credentials; don't treat it
-> as a vault.
-
-## Pre-installed Tools
-
-Installed via Nix in the image:
-
-- **Agents**: claude-code, opencode
-- **Core**: bash, curl, git, gnumake, gnutar, gnused, unzip, ca-certificates
-- **Runtime**: nodejs
-- **Multiplexer**: zellij
-- **Search**: ripgrep, fd
-- **Parsing**: jq
-- **Display**: tree, less, ncurses
 
 ## Security
 
