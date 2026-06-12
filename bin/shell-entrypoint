@@ -7,6 +7,8 @@ set -e
 # pass it here. Derived from the agent name; sanitized to the chars Zellij
 # accepts in a session name.
 SESSION_NAME="$(printf '%s' "${AGENT_NAME:-$(basename "$PWD")}" | tr -c 'A-Za-z0-9_-' '-')"
+NIX_BUILD_FLAGS=(--option build-users-group "")
+NIX_FLAGS=(--extra-experimental-features "nix-command flakes" "${NIX_BUILD_FLAGS[@]}")
 
 # Start the A2A listener once, before any nix re-exec. The pidfile guards
 # against the double-start that would otherwise happen when this script
@@ -43,7 +45,7 @@ print_load_error() {
 
 pick_devshell() {
     local shells
-    shells=$(nix flake show --json 2>/dev/null \
+    shells=$(nix "${NIX_FLAGS[@]}" flake show --json 2>/dev/null \
         | jq -r '.devShells | to_entries[0].value | keys[]' 2>/dev/null) || true
 
     if [ -z "$shells" ]; then
@@ -86,16 +88,16 @@ if [ -f /workspace/flake.nix ]; then
             # Bare `nix develop` resolves devShells.<system>.default OR the
             # legacy singular devShell.<system>; `.#default` only matches the
             # former, so omit the fragment to support devShell-only flakes.
-            nix develop --extra-experimental-features "nix-command flakes" --command "$0" && exit 0
+            nix "${NIX_FLAGS[@]}" develop --command "$0" && exit 0
         else
-            nix develop ".#$shell" --extra-experimental-features "nix-command flakes" --command "$0" && exit 0
+            nix "${NIX_FLAGS[@]}" develop ".#$shell" --command "$0" && exit 0
         fi
         # Reached only if nix develop failed to load — fall back to a plain shell.
         print_load_error
     fi
 elif [ -f /workspace/shell.nix ]; then
     if ask_load "shell.nix"; then
-        nix-shell --run "$0" && exit 0
+        nix-shell "${NIX_BUILD_FLAGS[@]}" --run "$0" && exit 0
         print_load_error
     fi
 fi
