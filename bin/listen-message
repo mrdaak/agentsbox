@@ -21,10 +21,17 @@ const { randomUUID } = require('crypto');
 
 const PORT = parseInt(process.env.A2A_PORT || '4096', 10);
 const AGENT_NAME = process.env.AGENT_NAME || require('os').hostname();
-// The local agent invocation. Defaults to Claude Code's headless mode.
-// A2A_AGENT_BIN/A2A_AGENT_ARGS let you swap in `opencode run`, etc.
-const AGENT_BIN = process.env.A2A_AGENT_BIN || 'claude';
-const AGENT_ARGS = (process.env.A2A_AGENT_ARGS || '-p').split(' ').filter(Boolean);
+// The local agent invocation. `agentsbox enter --a2a [claude|codex]` sets
+// A2A_AGENT; we map it to the headless command run over /workspace. Defaults to
+// Claude Code. Codex goes through the in-container `codex` wrapper, which adds
+// the nested-sandbox bypass flags for `codex exec`.
+const A2A_AGENTS = {
+  claude: { bin: 'claude', args: ['-p'] },
+  codex: { bin: 'codex', args: ['exec'] },
+};
+const AGENT = A2A_AGENTS[process.env.A2A_AGENT] || A2A_AGENTS.claude;
+const AGENT_BIN = AGENT.bin;
+const AGENT_ARGS = AGENT.args;
 const TIMEOUT_MS = parseInt(process.env.A2A_TIMEOUT_MS || '240000', 10);
 const WORKDIR = process.env.A2A_WORKDIR || '/workspace';
 
@@ -64,6 +71,7 @@ function runAgent(prompt) {
     const child = spawn(AGENT_BIN, [...AGENT_ARGS, prompt], {
       cwd: WORKDIR,
       env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';

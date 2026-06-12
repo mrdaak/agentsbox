@@ -1,7 +1,7 @@
 IMAGE_NAME := ai-agent
 NIX_VOLUME := agent-nix-store
 PNPM_VOLUME := agent-pnpm-store
-WORKDIR_HASH := $(shell echo -n "$(WORKDIR)" | shasum | cut -c1-8)
+WORKDIR_HASH := $(shell if command -v shasum >/dev/null 2>&1; then printf '%s' "$(WORKDIR)" | shasum | cut -c1-8; else printf '%s' "$(WORKDIR)" | sha1sum | cut -c1-8; fi)
 CONTAINER_NAME := agent-$(notdir $(WORKDIR))-$(WORKDIR_HASH)
 # Secrets loaded via `agentsbox load-secret`. Names are prefixed with either this
 # project's workdir hash (agent-<hash>-<name>, mounted only here) or "global"
@@ -26,10 +26,16 @@ SECRET_FLAGS := $(shell { \
 
 SHELL := /usr/bin/env bash
 ROOT_PATH = ${AGENTS_TOOLS_DIR}
+BUILD_LOG ?= /tmp/agentsbox-build.log
 
 # A2A agent alias other containers address us by (default: workdir basename).
 # `agentsbox enter --a2a` passes A2A=1 and AGENT_NAME explicitly.
 AGENT_NAME ?= $(notdir $(WORKDIR))
+
+# Headless agent the A2A listener runs to answer incoming messages.
+# `agentsbox enter --a2a [claude|codex]` selects which; listen-message maps the
+# value to an actual command ("claude" = Claude Code, "codex" = OpenAI Codex).
+A2A_AGENT ?= claude
 
 .PHONY: shell build update run clean-nix-store clean-pnpm-store doctor
 
@@ -38,11 +44,16 @@ shell:
 
 ## Build the image
 build:
-	cd ${ROOT_PATH} && podman build -t $(IMAGE_NAME):latest .
+	@echo "Loading..."
+	@cd ${ROOT_PATH} && podman build -t $(IMAGE_NAME):latest . >$(BUILD_LOG) 2>&1 || { \
+		echo "agentsbox: image build failed; see: $(BUILD_LOG)" >&2; \
+		exit 1; \
+	}
 
-## Force rebuild without cache
+## Force rebuild without cache and refresh the runtime Nix store
 update:
 	cd ${ROOT_PATH} && podman build --no-cache -t $(IMAGE_NAME):latest .
+	podman volume rm $(NIX_VOLUME) >/dev/null 2>&1 || true
 
 ## Run agent in the given WORKDIR (defaults to requiring explicit WORKDIR)
 run: build
@@ -64,7 +75,7 @@ endif
 		-v ~/.opencode/data:/root/.local/share/opencode:Z \
 		-p 4096 \
 		$(if $(AUTH),-p 1455:1455) \
-		$(if $(A2A),--network agentsbox-net --network-alias $(AGENT_NAME)) -e A2A_ENABLED=1 \
+		$(if $(A2A),--network agentsbox-net --network-alias $(AGENT_NAME) -e A2A_ENABLED=1 -e A2A_AGENT='$(A2A_AGENT)') \
 		-e AGENT_NAME=$(AGENT_NAME) \
 		-v ~/.claude:/root/.claude:Z \
 		-v ~/.claude.json:/root/.claude.json:Z \

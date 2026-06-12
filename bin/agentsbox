@@ -31,8 +31,10 @@ Subcommands:
 
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
-  --a2a          Enable agent-to-agent messaging (start the A2A listener and
-                 join the shared agentsbox-net network)
+  --a2a [AGENT]  Enable agent-to-agent messaging (start the A2A listener and
+                 join the shared agentsbox-net network). AGENT picks the
+                 headless agent that answers incoming messages: claude
+                 (default) or codex.
   --name NAME    A2A agent alias other agents address (default: dir basename)
 
 Options for 'load-secret' (agentsbox load-secret <file> [options]):
@@ -48,12 +50,20 @@ EOF
 }
 
 cmd_enter() {
-    local auth="" a2a="" agent_name=""
+    local auth="" a2a="" a2a_agent="claude" agent_name=""
     local args=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
-            --a2a)  a2a=1; shift ;;
+            --a2a)
+                a2a=1
+                # Optional value selects the headless agent. Anything else is
+                # left for the positional args (e.g. a command to run).
+                case "${2:-}" in
+                    claude|codex) a2a_agent="$2"; shift 2 ;;
+                    *)            shift ;;
+                esac
+                ;;
             --name) agent_name="$2"; shift 2 ;;
             *)      args+=("$1"); shift ;;
         esac
@@ -69,10 +79,11 @@ cmd_enter() {
             || podman network create agentsbox-net >/dev/null
     fi
 
-    exec make -f "$SCRIPT_DIR/Makefile" run \
+    exec make -s -f "$SCRIPT_DIR/Makefile" run \
         WORKDIR="$PWD" \
         AUTH="$auth" \
         A2A="$a2a" \
+        A2A_AGENT="$a2a_agent" \
         AGENT_NAME="$agent_name" \
         ARGS="${args[*]:-}"
 }

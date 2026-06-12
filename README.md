@@ -121,6 +121,15 @@ cd ~/src/repo2 && agentsbox enter --a2a      # listens as "repo2"
 cd ~/src/repo1 && agentsbox enter --a2a
 ```
 
+The A2A listener answers incoming messages by running a headless agent over the
+container's `/workspace`. It defaults to Claude Code (`claude -p`); pass an agent
+to `--a2a` to choose. Codex runs through the in-container wrapper that handles
+the nested-sandbox flags for `codex exec`:
+
+```bash
+cd ~/src/repo1 && agentsbox enter --a2a codex
+```
+
 ---
 
 ## Security
