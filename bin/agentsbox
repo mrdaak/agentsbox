@@ -21,7 +21,7 @@ Usage: agentsbox <subcommand> [options]
 
 Subcommands:
   enter          Enter an agent shell in the current directory
-  list           List running agent containers (pass -a for stopped too)
+  list           List running agent containers (-a for stopped too, --pretty for boxes)
   load-secret    Load a file as a podman secret for a project's agent shell
   list-secrets   List secrets mounted in a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
@@ -89,10 +89,7 @@ cmd_enter() {
 }
 
 cmd_list() {
-    # Containers are named agent-<dir>-<hash> from the ai-agent image (see
-    # Makefile). Filter on that prefix; forward extra args (e.g. -a, -q).
-    exec podman ps --filter "name=^agent-" \
-        --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" "$@"
+    exec "$SCRIPT_DIR/bin/list" "$@"
 }
 
 cmd_load_secret() {

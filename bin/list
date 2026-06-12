@@ -1,0 +1,75 @@
+#!/usr/bin/env nu
+# Lists running agent containers — those named agent-<dir>-<hash> from the
+# ai-agent image (see Makefile). Filters on that name prefix; pass --all to
+# include stopped containers too. Renders podman's output through nushell so
+# it comes back as a structured table you can pipe and filter, or as boxes
+# with --pretty.
+
+# Draws one container as a bordered box, its name sitting in the top edge:
+#   ╭─ agent-foo-1234abcd ─────────╮
+#   │ status: Up 3 minutes         │
+#   │ ports:  0.0.0.0:8080->80/tcp │
+#   ╰──────────────────────────────╯
+def render-box [c: record] {
+    let body = [
+        $"status: ($c.status)"
+        $"ports:  (if ($c.ports | is-empty) { '—' } else { $c.ports })"
+    ]
+    let namelen = ($c.name | str length)
+    let bodymax = ($body | each {|l| $l | str length} | math max)
+    # Interior width between the corners: enough for the decorated name
+    # (`─ name `, which is namelen + 3) or the widest body line (+2 padding).
+    let width = ([($namelen + 3) ($bodymax + 2)] | math max)
+
+    let topfill = ("" | fill -c '─' -w ($width - $namelen - 3))
+    let botfill = ("" | fill -c '─' -w $width)
+    # Border and name in green; body text stays default. ANSI codes sit outside
+    # the width math (computed from plain lengths above) so alignment holds.
+    let g = (ansi green)
+    let r = (ansi reset)
+    let top = $"($g)╭─ ($c.name) ($topfill)╮($r)"
+    let mid = ($body | each {|l| $"($g)│($r) ($l | fill -w ($width - 1))($g)│($r)" })
+    let bot = $"($g)╰($botfill)╯($r)"
+
+    [$top ...$mid $bot] | str join "\n"
+}
+
+def main [
+    --all (-a)      # Include stopped containers too (default: running only)
+    --pretty (-p)   # Render each agent as a box instead of a table
+] {
+    let extra = if $all { [--all] } else { [] }
+
+    # `\t`-separated template (not `table ...`) so each field lands in its own
+    # column after we split — Go interprets the `\t`, same as the old bash form.
+    let out = (
+        ^podman ps --filter "name=^agent-" ...$extra
+            --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
+        | str trim
+    )
+
+    if ($out | is-empty) {
+        if $all {
+            print "No agent containers."
+        } else {
+            print "No agent containers running."
+        }
+        return
+    }
+
+    let rows = ($out | lines | each {|line|
+        let f = ($line | split row "\t")
+        {
+            name:   ($f | get 0),
+            status: ($f | get 1),
+            ports:  ($f | get 2? | default ""),
+        }
+    })
+
+    if $pretty {
+        for c in $rows { print (render-box $c); print "" }
+        return
+    }
+
+    $rows
+}
