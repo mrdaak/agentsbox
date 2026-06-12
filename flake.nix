@@ -34,7 +34,7 @@
             runHook preInstall
 
             mkdir -p $out/share/agents $out/bin
-            cp -r Makefile Containerfile bin zellij-config.kdl $out/share/agents/
+            cp -r Makefile Containerfile packages.nix claude-code.nix codex.nix bin skills zellij-config.kdl $out/share/agents/
             chmod +x $out/share/agents/bin/*
 
             makeWrapper $out/share/agents/bin/agentsbox $out/bin/agentsbox \
