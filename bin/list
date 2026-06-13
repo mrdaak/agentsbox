@@ -3,23 +3,44 @@
 # ai-agent image (see Makefile). Filters on that name prefix; pass --all to
 # include stopped containers too. Renders podman's output through nushell so
 # it comes back as a structured table you can pipe and filter, or as boxes
-# with --pretty.
+# with --pretty. A2A-enabled agents (those joined to the agentsbox-net bus)
+# are grouped inside a network frame under --pretty. Pass --watch (--live) to
+# refresh the view in place every few seconds until interrupted.
 
-# Draws one container as a bordered box, its name sitting in the top edge:
+# A2A agents share one podman network — `agentsbox enter --a2a` attaches the
+# container to this bus and they reach each other by DNS alias on it. Presence
+# of this network in `podman ps` is how we tell an agent is A2A-enabled.
+const A2A_NET = "agentsbox-net"
+
+# Builds one container's box as a list of lines plus its visible width, with
+# the name sitting in the top edge:
 #   ╭─ agent-foo-1234abcd ─────────╮
 #   │ status: Up 3 minutes         │
 #   │ ports:  0.0.0.0:8080->80/tcp │
 #   ╰──────────────────────────────╯
-def render-box [c: record] {
+# Container names are agent-<dir>-<hash>; in pretty mode we show just <dir>
+# (the project), dropping the leading "agent-" and the trailing hash. <dir> may
+# itself contain hyphens, so split, drop the first and last segments, rejoin.
+def display-name [name: string] {
+    let parts = ($name | split row "-")
+    if ($parts | length) >= 3 { $parts | skip 1 | drop 1 | str join "-" } else { $name }
+}
+
+def box-lines [c: record, min_width: int = 0] {
+    let name = (display-name $c.name)
     let body = [
         $"status: ($c.status)"
         $"ports:  (if ($c.ports | is-empty) { '—' } else { $c.ports })"
     ]
-    let namelen = ($c.name | str length)
-    let bodymax = ($body | each {|l| $l | str length} | math max)
+    # Measure in display columns (graphemes), not bytes: the em-dash placeholder
+    # and any non-ASCII in a name are multi-byte but occupy one column, and
+    # `fill` below pads by column too — so the math must agree with it.
+    let namelen = ($name | str length --grapheme-clusters)
+    let bodymax = ($body | each {|l| $l | str length --grapheme-clusters} | math max)
     # Interior width between the corners: enough for the decorated name
     # (`─ name `, which is namelen + 3) or the widest body line (+2 padding).
-    let width = ([($namelen + 3) ($bodymax + 2)] | math max)
+    # `min_width` lets the caller force a uniform width so a grid lines up.
+    let width = ([($namelen + 3) ($bodymax + 2) $min_width] | math max)
 
     let topfill = ("" | fill -c '─' -w ($width - $namelen - 3))
     let botfill = ("" | fill -c '─' -w $width)
@@ -27,49 +48,155 @@ def render-box [c: record] {
     # the width math (computed from plain lengths above) so alignment holds.
     let g = (ansi green)
     let r = (ansi reset)
-    let top = $"($g)╭─ ($c.name) ($topfill)╮($r)"
+    let top = $"($g)╭─ ($name) ($topfill)╮($r)"
     let mid = ($body | each {|l| $"($g)│($r) ($l | fill -w ($width - 1))($g)│($r)" })
     let bot = $"($g)╰($botfill)╯($r)"
 
-    [$top ...$mid $bot] | str join "\n"
+    # Every box is the same printable width (width + 2 corner/border columns);
+    # the caller needs that to lay boxes side by side and size the outer frame.
+    {lines: ([$top ...$mid $bot]), width: ($width + 2)}
 }
 
-def main [
-    --all (-a)      # Include stopped containers too (default: running only)
-    --pretty (-p)   # Render each agent as a box instead of a table
-] {
+# Lays containers out as boxes, `per_row` to a line, wrapping to new rows
+# beyond that. Boxes share a uniform width so the columns line up; rows are
+# separated by a blank spacer. Returns the rendered lines plus the block's
+# overall width (the widest row), which a caller can use to size a frame.
+def box-grid [rows: list, per_row: int] {
+    # Force every box to the widest interior width so columns align across rows.
+    let target = ($rows | each {|c| (box-lines $c).width - 2 } | math max)
+    let boxes = ($rows | each {|c| box-lines $c $target })
+    let sep = "  "
+    let sep_w = ($sep | str length --grapheme-clusters)
+    let nlines = ($boxes | first | get lines | length)
+
+    # Each group of `per_row` boxes becomes one block: zip the i-th line of every
+    # box in the group (boxes are equal height) joined by the column separator.
+    let blocks = ($boxes | chunks $per_row | each {|grp|
+        let lines = (0..($nlines - 1) | each {|i|
+            $grp | each {|b| $b.lines | get $i } | str join $sep
+        })
+        let width = (($grp | each {|b| $b.width} | math sum) + ($sep_w * (($grp | length) - 1)))
+        {lines: $lines, width: $width}
+    })
+    let inner_w = ($blocks | each {|b| $b.width} | math max)
+
+    # Right-pad each block to inner_w (a short final row stays left-aligned) and
+    # stack blocks with a blank spacer line between rows.
+    let blank = ("" | fill -w $inner_w)
+    let lines = ($blocks | enumerate | each {|e|
+        let pad = ("" | fill -w ($inner_w - $e.item.width))
+        let padded = ($e.item.lines | each {|line| $"($line)($pad)" })
+        if $e.index == 0 { $padded } else { [$blank ...$padded] }
+    } | flatten)
+
+    {lines: $lines, width: $inner_w}
+}
+
+# Wraps the given containers' boxes (laid out as a grid) in a cyan frame,
+# signalling they all share the A2A bus:
+#   ┏━ A2A network ━━━━━━━━━━━━━━━━━━━━━━┓
+#   ┃ ╭─ foo ──╮  ╭─ baz ──╮             ┃
+#   ┃ ...                                ┃
+#   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+def render-network [rows: list] {
+    let grid = (box-grid $rows 2)
+
+    let title = "A2A network"
+    let titlelen = ($title | str length --grapheme-clusters)
+    let ow = ($grid.width + 2)   # interior between the ┃ borders (1-space gutter)
+    let topfill = ("" | fill -c '━' -w ([0 ($ow - $titlelen - 3)] | math max))
+    let botfill = ("" | fill -c '━' -w $ow)
+
+    let g = (ansi cyan)
+    let r = (ansi reset)
+    let top = $"($g)┏━ ($title) ($topfill)┓($r)"
+    let body = ($grid.lines | each {|line| $"($g)┃($r) ($line) ($g)┃($r)" })
+    let bot = $"($g)┗($botfill)┛($r)"
+
+    [$top ...$body $bot] | str join "\n"
+}
+
+# Runs the podman query and returns the agent rows (empty list if none).
+def collect-rows [all: bool] {
     let extra = if $all { [--all] } else { [] }
 
     # `\t`-separated template (not `table ...`) so each field lands in its own
     # column after we split — Go interprets the `\t`, same as the old bash form.
+    # `.Networks` lets us flag A2A-enabled agents (those on the shared bus).
     let out = (
         ^podman ps --filter "name=^agent-" ...$extra
-            --format '{{.Names}}\t{{.Status}}\t{{.Ports}}'
+            --format '{{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Networks}}'
         | str trim
     )
+    if ($out | is-empty) { return [] }
 
-    if ($out | is-empty) {
-        if $all {
-            print "No agent containers."
-        } else {
-            print "No agent containers running."
-        }
-        return
-    }
-
-    let rows = ($out | lines | each {|line|
+    $out | lines | each {|line|
         let f = ($line | split row "\t")
+        let nets = ($f | get 3? | default "" | split row "," | str trim)
         {
             name:   ($f | get 0),
             status: ($f | get 1),
             ports:  ($f | get 2? | default ""),
+            a2a:    ($A2A_NET in $nets),
         }
-    })
+    }
+}
 
+def empty-msg [all: bool] {
+    if $all { "No agent containers." } else { "No agent containers running." }
+}
+
+# Renders one frame as a string: boxes (A2A agents inside the network frame,
+# the rest standalone) when pretty, otherwise the structured table.
+def render-frame [rows: list, pretty: bool, all: bool] {
+    if ($rows | is-empty) { return (empty-msg $all) }
+    if not $pretty { return ($rows | table) }
+
+    let a2a = ($rows | where a2a)
+    let solo = ($rows | where not a2a)
+    let net = if ($a2a | is-not-empty) { [(render-network $a2a)] } else { [] }
+    let solo_block = if ($solo | is-not-empty) { [((box-grid $solo 2).lines | str join "\n")] } else { [] }
+    ($net | append $solo_block) | str join "\n\n"
+}
+
+def main [
+    --all (-a)                 # Include stopped containers too (default: running only)
+    --pretty (-p)              # Render agents as boxes instead of a table
+    --watch (-w)               # Refresh continuously in place until Ctrl-C
+    --live                     # Alias for --watch
+    --interval (-i): int = 5   # Seconds between refreshes in --watch mode
+] {
+    if $watch or $live {
+        # Ctrl-C surfaces as a catchable "operation interrupted" error (it aborts
+        # the sleep). Swallow just that one so the exit is clean — but still
+        # report any real failure, e.g. podman erroring mid-loop.
+        try {
+            loop {
+                let rows = (collect-rows $all)
+                # Repaint from the top each tick (cursor home, then clear below) so
+                # the view updates in place instead of scrolling the terminal.
+                print -n $"(ansi cursor_home)(ansi clear_screen_from_cursor_to_end)"
+                print $"(ansi dark_gray)agentsbox · live every ($interval)s · (date now | format date '%H:%M:%S') · Ctrl-C to stop(ansi reset)"
+                print (render-frame $rows $pretty $all)
+                sleep ($interval * 1sec)
+            }
+        } catch {|e|
+            if (($e.msg? | default "") | str downcase | str contains "interrupt") { exit 0 }
+            print -e $"list: ($e.msg)"
+            exit 1
+        }
+    }
+
+    let rows = (collect-rows $all)
+    if ($rows | is-empty) {
+        print (empty-msg $all)
+        return
+    }
     if $pretty {
-        for c in $rows { print (render-box $c); print "" }
+        print (render-frame $rows $pretty $all)
         return
     }
 
+    # Plain table: return the records so the output stays pipeable / filterable.
     $rows
 }
