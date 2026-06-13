@@ -100,7 +100,6 @@ export def "main run" [
     --a2a                             # join agentsbox-net and start the A2A listener
     --a2a-agent: string = "claude"    # headless agent answering A2A messages
     --agent-name: string              # A2A alias (default: workdir basename)
-    --args: string                    # accepted for parity; currently unused (was a no-op in the Makefile too)
 ] {
     if ($workdir | is-empty) {
         print -e "WORKDIR is not set. Usage: nu make.nu run --workdir ~/src/my-project"

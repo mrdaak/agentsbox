@@ -72,8 +72,6 @@
                 ["agentsbox update", "Pull latest base image and rebuild"]
                 ["agentsbox doctor", "Check host environment for required tooling"]
               ] | table --index false)
-              print ""
-              print "Manual task-runner usage: nu make.nu run --workdir ~/src/my-project"
             '
           '';
         };

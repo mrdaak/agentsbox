@@ -20,7 +20,7 @@ usage() {
 Usage: agentsbox <subcommand> [options]
 
 Subcommands:
-  enter          Enter an agent shell in the current directory
+  enter [PATH]   Enter an agent shell in PATH (default: current directory)
   list           List running agent containers (-a stopped, --pretty boxes, --watch live)
   load-secret    Load a file as a podman secret for a project's agent shell
   list-secrets   List secrets mounted in a project's agent shell
@@ -50,27 +50,33 @@ EOF
 }
 
 cmd_enter() {
-    local auth="" a2a="" a2a_agent="claude" agent_name=""
-    local args=()
+    local auth="" a2a="" a2a_agent="claude" agent_name="" workdir=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
             --a2a)
                 a2a=1
-                # Optional value selects the headless agent. Anything else is
-                # left for the positional args (e.g. a command to run).
+                # Optional value selects the headless agent; anything else (e.g.
+                # the project path) is left for the positional below.
                 case "${2:-}" in
                     claude|codex) a2a_agent="$2"; shift 2 ;;
                     *)            shift ;;
                 esac
                 ;;
             --name) agent_name="$2"; shift 2 ;;
-            *)      args+=("$1"); shift ;;
+            -*)     echo "enter: unknown option: $1" >&2; exit 1 ;;
+            *)      workdir="$1"; shift ;;
         esac
     done
 
+    # Project dir defaults to the current directory; canonicalize to an absolute
+    # path so the project hash lines up across enter / load-secret / list-secrets.
+    workdir="${workdir:-$PWD}"
+    [[ -d "$workdir" ]] || { echo "enter: no such directory: $workdir" >&2; exit 1; }
+    workdir="$(cd "$workdir" && pwd)"
+
     # Default the A2A agent alias to the project directory's basename.
-    [[ -n "$agent_name" ]] || agent_name="$(basename "$PWD")"
+    [[ -n "$agent_name" ]] || agent_name="$(basename "$workdir")"
 
     if [[ -n "$a2a" ]]; then
         # The shared user-defined network gives containers DNS-based name
@@ -79,10 +85,9 @@ cmd_enter() {
             || podman network create agentsbox-net >/dev/null
     fi
 
-    local run_args=(run --workdir "$PWD" --a2a-agent "$a2a_agent" --agent-name "$agent_name")
+    local run_args=(run --workdir "$workdir" --a2a-agent "$a2a_agent" --agent-name "$agent_name")
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
-    [[ -n "${args[*]:-}" ]] && run_args+=(--args "${args[*]}")
     exec nu "$SCRIPT_DIR/make.nu" "${run_args[@]}"
 }
 
