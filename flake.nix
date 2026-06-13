@@ -12,7 +12,6 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         runtimeDeps = [
-          pkgs.gnumake
           pkgs.podman
           pkgs.nushell
           pkgs.jq
@@ -34,7 +33,7 @@
             runHook preInstall
 
             mkdir -p $out/share/agents $out/bin
-            cp -r Makefile Containerfile packages.nix claude-code.nix codex.nix bin skills zellij-config.kdl $out/share/agents/
+            cp -r make.nu Containerfile packages.nix claude-code.nix codex.nix bin skills zellij-config.kdl $out/share/agents/
             chmod +x $out/share/agents/bin/*
 
             makeWrapper $out/share/agents/bin/agentsbox $out/bin/agentsbox \
@@ -54,22 +53,28 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.gnumake pkgs.podman pkgs.zellij pkgs.nushell ];
+          buildInputs = [ pkgs.podman pkgs.zellij pkgs.nushell ];
 
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)
             export PATH="$AGENTS_TOOLS_DIR/bin:$PATH"
 
-            echo ""
-            echo "Available commands:"
-            echo "  agentsbox enter        - Enter an agent shell in the current directory"
-            echo "  agentsbox list         - List running agent containers"
-            echo "  agentsbox load-secret  - Load a file as a podman secret for a project"
-            echo "  agentsbox update       - Pull latest base image and rebuild"
-            echo "  agentsbox doctor       - Check host environment for required tooling"
-            echo ""
-            echo "Manual make usage:"
-            echo "  make run WORKDIR=~/src/my-project"
+            nu --no-config-file -c '
+              print ""
+              print "Available commands:"
+              print ([
+                [command, description];
+                ["agentsbox enter", "Enter an agent shell in the current directory"]
+                ["agentsbox list", "List running agent containers"]
+                ["agentsbox load-secret", "Load a file as a podman secret for a project"]
+                ["agentsbox list-secrets", "List secrets mounted in a project agent shell"]
+                ["agentsbox install-skills", "Install bundled skills into ~/.agents/skills"]
+                ["agentsbox update", "Pull latest base image and rebuild"]
+                ["agentsbox doctor", "Check host environment for required tooling"]
+              ] | table --index false)
+              print ""
+              print "Manual task-runner usage: nu make.nu run --workdir ~/src/my-project"
+            '
           '';
         };
       }

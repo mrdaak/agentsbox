@@ -74,7 +74,7 @@ def check-image [] {
     if $r.exit_code == 0 {
         [(pass "Image ai-agent:latest built")]
     } else {
-        [(warn-check "Image ai-agent:latest missing" "make build")]
+        [(warn-check "Image ai-agent:latest missing" "agentsbox update")]
     }
 }
 

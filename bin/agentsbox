@@ -4,9 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# First 8 hex of the SHA-1 of a string. Matches the Makefile's
-# `shasum | cut -c1-8` (falls back to sha1sum, which is the same algorithm, so
-# the project hash lines up regardless of which tool is on PATH).
+# First 8 hex of the SHA-1 of a string. Matches make.nu's `workdir-hash`
+# (`sha1sum | cut -c1-8`; falls back to shasum, the same algorithm, so the
+# project hash lines up regardless of which tool is on PATH).
 sha1_8() {
     if command -v shasum >/dev/null 2>&1; then
         printf '%s' "$1" | shasum | cut -c1-8
@@ -79,13 +79,11 @@ cmd_enter() {
             || podman network create agentsbox-net >/dev/null
     fi
 
-    exec make -s -f "$SCRIPT_DIR/Makefile" run \
-        WORKDIR="$PWD" \
-        AUTH="$auth" \
-        A2A="$a2a" \
-        A2A_AGENT="$a2a_agent" \
-        AGENT_NAME="$agent_name" \
-        ARGS="${args[*]:-}"
+    local run_args=(run --workdir "$PWD" --a2a-agent "$a2a_agent" --agent-name "$agent_name")
+    [[ -n "$auth" ]] && run_args+=(--auth)
+    [[ -n "$a2a" ]] && run_args+=(--a2a)
+    [[ -n "${args[*]:-}" ]] && run_args+=(--args "${args[*]}")
+    exec nu "$SCRIPT_DIR/make.nu" "${run_args[@]}"
 }
 
 cmd_list() {
@@ -126,8 +124,8 @@ cmd_load_secret() {
         secret="agent-global-$name"
     else
         [[ -d "$project" ]] || { echo "load-secret: no such project dir: $project" >&2; exit 1; }
-        # Canonicalize to match the WORKDIR string the Makefile hashes (it uses
-        # $PWD passed by `enter`), so the project hash lines up at run time.
+        # Canonicalize to match the workdir string make.nu hashes (it uses the
+        # --workdir value passed by `enter`), so the project hash lines up at run time.
         project="$(cd "$project" && pwd)"
         secret="agent-$(sha1_8 "$project")-$name"
     fi
@@ -190,7 +188,7 @@ cmd_install_skills() {
 }
 
 cmd_update() {
-    exec make -f "$SCRIPT_DIR/Makefile" update
+    exec nu "$SCRIPT_DIR/make.nu" update
 }
 
 cmd_doctor() {
