@@ -2,36 +2,68 @@
 # send-message — A2A client for agentsbox.
 #
 # POSTs a JSON-RPC 2.0 `message/send` request to another agent on the shared
-# agentsbox network and prints the answer text.
+# agentsbox network and prints the reply.
 #
-#   send-message <agent-name> <text...>
+#   send-message [--data <json>] <agent-name> [text...]
 #
-# Example (from repo1's agent shell):
+# A text message rides as an A2A TextPart; --data <json> attaches a structured
+# DataPart (kind "data"), letting agents that understand it dispatch on the
+# payload (e.g. a wiki: {"op":"get","id":"..."}). At least one of text/--data
+# is required; both may be sent together.
+#
+# Examples (from a project agent shell):
 #   send-message repo2 "How does repo2 authenticate API calls?"
+#   send-message --data '{"op":"search","query":"auth"}' wiki
 #
 # The target is reached at http://<agent-name>:<A2A_PORT>/ over the
 # agentsbox-net podman network. Requires the target container to be running
-# with A2A enabled (agentsbox enter --a2a).
+# with A2A enabled (agentsbox enter --a2a). Text parts of the reply print as
+# text; data parts print as compact JSON.
 set -euo pipefail
 
 PORT="${A2A_PORT:-4096}"
 TIMEOUT="${A2A_CLIENT_TIMEOUT:-300}"
 
-if [[ $# -lt 2 ]]; then
-    echo "usage: send-message <agent-name> <text...>" >&2
+# Pull out an optional --data flag; the first remaining arg is the agent name,
+# the rest is the message text.
+DATA=""
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --data) DATA="${2:-}"; shift 2 ;;
+        *)      POSITIONAL+=("$1"); shift ;;
+    esac
+done
+
+if [[ ${#POSITIONAL[@]} -lt 1 ]]; then
+    echo "usage: send-message [--data <json>] <agent-name> [text...]" >&2
     exit 1
 fi
 
-agent="$1"
-shift
-text="$*"
+agent="${POSITIONAL[0]}"
+text="${POSITIONAL[*]:1}"
 url="http://${agent}:${PORT}/"
+
+if [[ -z "$text" && -z "$DATA" ]]; then
+    echo "send-message: nothing to send — provide text and/or --data <json>" >&2
+    exit 1
+fi
+
+# Validate --data up front so a malformed payload fails clearly here, not server-side.
+if [[ -n "$DATA" ]] && ! jq -e . >/dev/null 2>&1 <<<"$DATA"; then
+    echo "send-message: --data is not valid JSON" >&2
+    exit 1
+fi
 
 # A fresh message id per request (Linux kernel UUID source — always present).
 msg_id="$(cat /proc/sys/kernel/random/uuid)"
 
-# Build the JSON-RPC envelope with jq so the text is escaped safely.
-request="$(jq -n --arg id "$msg_id" --arg text "$text" '{
+# Build the JSON-RPC envelope with jq so the text is escaped safely. parts holds
+# a TextPart when there's text and a DataPart when --data was given (either or both).
+request="$(jq -n \
+    --arg id "$msg_id" \
+    --arg text "$text" \
+    --argjson data "${DATA:-null}" '{
     jsonrpc: "2.0",
     id: 1,
     method: "message/send",
@@ -39,7 +71,10 @@ request="$(jq -n --arg id "$msg_id" --arg text "$text" '{
         message: {
             messageId: $id,
             role: "user",
-            parts: [ { kind: "text", text: $text } ]
+            parts: (
+                (if ($text | length) > 0 then [ { kind: "text", text: $text } ] else [] end)
+              + (if $data != null then [ { kind: "data", data: $data } ] else [] end)
+            )
         }
     }
 }')"
@@ -61,4 +96,10 @@ if echo "$response" | jq -e 'has("error")' >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "$response" | jq -r '.result.parts[]? | select(.text) | .text'
+# Print text parts as text and data parts as compact JSON, in order.
+echo "$response" | jq -r '
+    .result.parts[]?
+    | if .kind == "data" then (.data | tojson)
+      elif .text != null then .text
+      else empty end
+'

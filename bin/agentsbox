@@ -15,6 +15,18 @@ sha1_8() {
     fi
 }
 
+# Read a single key from a project's .agentsbox/config.toml. nushell PARSES the
+# TOML (it never sources/executes it), so a project's config can't run code at
+# `enter` time. Prints the value (or nothing if the file/key is absent or the
+# file is malformed). File and key are passed via env to avoid quoting issues.
+config_value() {
+    local file="$1" key="$2"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" CFG_KEY="$key" nu -c \
+        'try { open $env.CFG_FILE | get $env.CFG_KEY | into string } catch { "" }' \
+        2>/dev/null || true
+}
+
 usage() {
     cat <<EOF
 Usage: agentsbox <subcommand> [options]
@@ -37,6 +49,10 @@ Options for 'enter':
                  (default) or codex.
   --name NAME    A2A agent alias other agents address (default: dir basename)
 
+  A project may ship .agentsbox/listen (a custom A2A server — you'll be asked
+  to serve it over A2A) and .agentsbox/config.toml (AGENT_NAME / A2A_AGENT
+  defaults; CLI flags override).
+
 Options for 'load-secret' (agentsbox load-secret <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
@@ -50,7 +66,7 @@ EOF
 }
 
 cmd_enter() {
-    local auth="" a2a="" a2a_agent="claude" agent_name="" workdir=""
+    local auth="" a2a="" a2a_agent="" agent_name="" workdir=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
@@ -75,8 +91,33 @@ cmd_enter() {
     [[ -d "$workdir" ]] || { echo "enter: no such directory: $workdir" >&2; exit 1; }
     workdir="$(cd "$workdir" && pwd)"
 
-    # Default the A2A agent alias to the project directory's basename.
+    # Project-declared defaults from .agentsbox/config.toml. CLI flags win;
+    # config fills only what the flags left unset (precedence: flag > config >
+    # built-in default). Config sets identity, never whether to serve A2A — that
+    # stays the user's explicit choice below.
+    local config="$workdir/.agentsbox/config.toml"
+    if [[ -f "$config" ]]; then
+        [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
+        [[ -n "$a2a_agent" ]]  || a2a_agent="$(config_value "$config" A2A_AGENT)"
+    fi
+
+    # Final fallbacks: alias = project dir basename, headless agent = claude.
     [[ -n "$agent_name" ]] || agent_name="$(basename "$workdir")"
+    [[ -n "$a2a_agent" ]]  || a2a_agent="claude"
+
+    # A project can ship its own A2A server at .agentsbox/listen (e.g. a wiki).
+    # If the user didn't pass --a2a, offer to serve it — but only interactively,
+    # so joining the shared mesh stays a conscious choice (the file is boot code
+    # a cloned repo must not be able to auto-run).
+    local listen="$workdir/.agentsbox/listen"
+    if [[ -z "$a2a" && -f "$listen" && ! -x "$listen" ]]; then
+        echo "agentsbox: $listen exists but is not executable; chmod +x to serve it over A2A" >&2
+    fi
+    if [[ -z "$a2a" && -x "$listen" && -t 0 ]]; then
+        local reply=""
+        read -r -p "Detected an A2A listener — serve it on agentsbox-net as '$agent_name'? [y/N]: " reply || reply=""
+        case "$reply" in [Yy]*) a2a=1 ;; esac
+    fi
 
     if [[ -n "$a2a" ]]; then
         # The shared user-defined network gives containers DNS-based name

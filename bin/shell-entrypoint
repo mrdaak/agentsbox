@@ -15,8 +15,17 @@ NIX_FLAGS=(--extra-experimental-features "nix-command flakes" "${NIX_BUILD_FLAGS
 # re-execs itself through `nix develop --command "$0"`. node and the local
 # agent come from the image's global nix profile, so they are on PATH here
 # regardless of whether a project dev shell is loaded.
+#
+# A project can ship its own A2A server at /workspace/.agentsbox/listen (e.g. a
+# wiki with a custom skill surface); if present and executable we run that
+# instead of the built-in agent-mediated listener. Otherwise fall back.
 if [ "${A2A_ENABLED:-}" = "1" ] && [ ! -f /tmp/a2a-listener.pid ]; then
-    listen-message >/tmp/a2a.log 2>&1 &
+    if [ -x /workspace/.agentsbox/listen ]; then
+        A2A_LISTENER=/workspace/.agentsbox/listen
+    else
+        A2A_LISTENER=listen-message
+    fi
+    "$A2A_LISTENER" >/tmp/a2a.log 2>&1 &
     echo $! > /tmp/a2a-listener.pid
 fi
 
