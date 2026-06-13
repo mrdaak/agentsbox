@@ -3,7 +3,7 @@
 This repository provisions and runs [OpenCode](https://opencode.ai/) inside a rootless
 Podman container with a reproducible Nix-based dev environment. There is **no application
 source code** to compile or test — the repo is purely operational infrastructure (Bash
-scripts, a Makefile, a Containerfile, and a Nix flake).
+and nushell scripts, a `make.nu` task runner, a Containerfile, and a Nix flake).
 
 ---
 
@@ -12,8 +12,8 @@ scripts, a Makefile, a Containerfile, and a Nix flake).
 ```
 bin/                    User-facing scripts (opencode, opencode-update, opencode-entrypoint)
 Containerfile           OCI image definition (based on nixos/nix:latest)
-flake.nix               Nix flake — dev shell with gnumake + podman
-Makefile                Orchestration: build / update / run targets
+flake.nix               Nix flake — dev shell with podman + nushell
+make.nu                 Orchestration (nushell): build / update / run subcommands
 .opencode/              OpenCode agent config (package.json for plugins, plans/)
 README.md               User-facing documentation
 ```
@@ -22,8 +22,9 @@ README.md               User-facing documentation
 
 ## Build Commands
 
-All meaningful actions go through `make`. The Nix dev shell must be active (or
-`OPENCODE_TOOLS_DIR` must be set) for `make` targets that reference `${ROOT_PATH}`.
+All meaningful actions go through `make.nu` (a nushell task runner). The Nix dev
+shell must be active (or `AGENTS_TOOLS_DIR` must be set) for subcommands that
+reference the repo root.
 
 ```bash
 # Enter the Nix dev shell (required once per terminal session)
@@ -32,23 +33,20 @@ nix develop
 direnv allow
 
 # Build the container image
-make build
+nu make.nu build
 
 # Force-rebuild the image without the layer cache
-make update
+nu make.nu update
 
-# Run OpenCode in a specific project directory
-make run WORKDIR=~/src/my-project
-
-# Pass extra arguments to OpenCode
-make run WORKDIR=~/src/my-project ARGS="--model gpt-4o"
+# Run the agent in a specific project directory
+nu make.nu run --workdir ~/src/my-project
 ```
 
-The convenience wrappers in `bin/` delegate directly to `make`:
+In normal use you go through `agentsbox`, which calls `make.nu` for you:
 
 ```bash
-opencode            # equivalent to: make run WORKDIR=$PWD
-opencode-update     # equivalent to: make update
+agentsbox enter     # equivalent to: nu make.nu run --workdir $PWD
+agentsbox update    # equivalent to: nu make.nu update
 ```
 
 ---
@@ -56,16 +54,16 @@ opencode-update     # equivalent to: make update
 ## Test Commands
 
 **This repository has no test suite.** There are no test files, no test runner, and no
-test-related Makefile targets. Do not create placeholder test files.
+test-related subcommands. Do not create placeholder test files.
 
 Verification is done by building and running the container:
 
 ```bash
 # Smoke-test: build succeeds
-make build
+nu make.nu build
 
 # Smoke-test: container launches and prints usage
-make run WORKDIR=/tmp
+nu make.nu run --workdir /tmp
 ```
 
 ---
@@ -73,7 +71,7 @@ make run WORKDIR=/tmp
 ## Linting / Formatting
 
 There are no linting or formatting tools configured in this repository. Follow the
-conventions below when editing shell scripts or Makefile targets.
+conventions below when editing shell scripts or `make.nu` subcommands.
 
 ---
 
@@ -92,7 +90,7 @@ conventions below when editing shell scripts or Makefile targets.
   ```
 - **Process replacement:** prefer `exec <command>` instead of a bare call when the
   script's only job is to hand off to another process (avoids a wasted shell process).
-- **Single responsibility:** each script does one thing and defers logic to `make`.
+- **Single responsibility:** each script does one thing and defers logic to `make.nu`.
 - **Comments:** one-line header comment immediately after the shebang explaining purpose.
 - **Graceful fallback pattern** (entrypoint only):
   ```bash
@@ -102,21 +100,27 @@ conventions below when editing shell scripts or Makefile targets.
   }
   ```
 
-### Makefile
+### make.nu (nushell)
 
-- **Variable naming:** `SCREAMING_SNAKE_CASE` (e.g., `IMAGE_NAME`, `ROOT_PATH`).
-- **Phony targets:** declare all non-file targets in `.PHONY`.
-- **Shell:** set `SHELL := /bin/bash` at the top for consistent behavior.
-- **Mandatory variable validation:** use `$(error ...)` inside `ifndef` blocks:
-  ```makefile
-  ifndef WORKDIR
-      $(error WORKDIR is not set. Usage: make run WORKDIR=~/src/my-project)
-  endif
+- **Constant naming:** `SCREAMING_SNAKE_CASE` for `const` values (e.g., `IMAGE_NAME`,
+  `NIX_VOLUME`); `kebab-case` for command and helper names (`build-image`, `secret-flags`).
+- **Subcommands:** expose each task as `export def "main <name>" []`; keep non-task
+  helpers as plain (unexported) `def`s.
+- **Mandatory argument validation:** check required flags explicitly and exit non-zero:
+  ```nu
+  if ($workdir | is-empty) {
+      print -e "WORKDIR is not set. Usage: nu make.nu run --workdir ~/src/my-project"
+      exit 1
+  }
   ```
-- **Comments:** use `##` prefix on the line above a target for self-documenting targets.
+- **External-command failures:** a non-zero external aborts the script — wrap in
+  `try { ... } catch { ... }` when you need to convert that into a custom message/exit.
+- **Eager `default`:** `default (expr)` evaluates `expr` unconditionally; use an `if`
+  when the fallback has side effects (e.g. raising an error).
+- **Comments:** use `##` prefix on the line above a subcommand for self-documentation.
 - **Security:** always pass `--security-opt no-new-privileges:true` to `podman run`.
 - **Ephemeral containers:** always include `--rm` in `podman run` invocations.
-- **Container naming:** derive from the project directory — `opencode-$(notdir $(WORKDIR))`
+- **Container naming:** derive from the project directory — `agent-(basename)-(hash)`
   — so multiple projects can run simultaneously without name collisions.
 
 ### Containerfile
@@ -135,7 +139,7 @@ conventions below when editing shell scripts or Makefile targets.
 
 - **Attribute naming:** `camelCase` following Nix conventions (`buildInputs`, `shellHook`,
   `devShells`).
-- **`shellHook`:** export `OPENCODE_TOOLS_DIR` and prepend `bin/` to `$PATH` so wrapper
+- **`shellHook`:** export `AGENTS_TOOLS_DIR` and prepend `bin/` to `$PATH` so wrapper
   scripts are available in any shell.
 - **Pin nixpkgs channel:** reference a stable channel (e.g., `nixos-25.05`) to ensure
   reproducible builds.
@@ -143,14 +147,14 @@ conventions below when editing shell scripts or Makefile targets.
 ### File Naming
 
 - Scripts and config files: `kebab-case` (e.g., `opencode-entrypoint`).
-- Make targets: lowercase single words (`build`, `update`, `run`, `shell`).
+- `make.nu` subcommands: lowercase, `kebab-case` (`build`, `update`, `run`, `clean-nix-store`).
 - No file extensions on executable shell scripts in `bin/`.
 
 ---
 
 ## Volume Mount Conventions
 
-When modifying the `make run` target, preserve these bind mounts:
+When modifying the `run` subcommand in `make.nu`, preserve these bind mounts:
 
 | Host path              | Container path                | Purpose                  |
 |------------------------|-------------------------------|--------------------------|
@@ -166,18 +170,18 @@ Always create host-side directories with `mkdir -p` before mounting them.
 
 | Variable              | Set by        | Purpose                                      |
 |-----------------------|---------------|----------------------------------------------|
-| `OPENCODE_TOOLS_DIR`  | `flake.nix` shellHook | Absolute path to repo root; used by Makefile |
-| `XDG_CONFIG_HOME`     | Containerfile + Makefile `-e` | Overrides XDG base dir for config |
-| `XDG_DATA_HOME`       | Containerfile + Makefile `-e` | Overrides XDG base dir for data   |
-| `OPENCODE_CONFIG_DIR` | Containerfile + Makefile `-e` | Explicit OpenCode config path     |
+| `AGENTS_TOOLS_DIR`    | `flake.nix` shellHook | Absolute path to repo root; used by `make.nu` |
+| `XDG_CONFIG_HOME`     | Containerfile + `make.nu` `-e` | Overrides XDG base dir for config |
+| `XDG_DATA_HOME`       | Containerfile + `make.nu` `-e` | Overrides XDG base dir for data   |
+| `OPENCODE_CONFIG_DIR` | Containerfile + `make.nu` `-e` | Explicit OpenCode config path     |
 
 ---
 
 ## Do / Do Not
 
 **Do:**
-- Keep scripts minimal and single-purpose; delegate logic to `make`.
-- Run `make build` after any change to the `Containerfile` to verify it builds.
+- Keep scripts minimal and single-purpose; delegate logic to `make.nu`.
+- Run `nu make.nu build` after any change to the `Containerfile` to verify it builds.
 - Use `:Z` on SELinux-aware systems for all Podman bind mounts.
 - Create `~/.opencode/config` and `~/.opencode/data` on the host before mounting.
 
@@ -186,5 +190,5 @@ Always create host-side directories with `mkdir -p` before mounting them.
   to this repository — it is purely infrastructure.
 - Commit `bun.lock` or the generated `.opencode/package.json`; they are git-ignored.
 - Use `sudo` or run Podman as root — rootless is a hard requirement.
-- Cache secrets or API keys in the `Containerfile` or Makefile.
+- Cache secrets or API keys in the `Containerfile` or `make.nu`.
 - Skip `set -euo pipefail` in new Bash scripts without explicit justification.
