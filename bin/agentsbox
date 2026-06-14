@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentsbox — dispatcher for enter / list / load-secret / list-secrets / update / doctor
+# agentsbox — dispatcher for enter / ls / secrets / install-skills / update / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,9 +33,9 @@ Usage: agentsbox <subcommand> [options]
 
 Subcommands:
   enter [PATH]   Enter an agent shell in PATH (default: current directory)
-  list           List running agent containers (-a stopped, --pretty boxes, --watch live)
-  load-secret    Load a file as a podman secret for a project's agent shell
-  list-secrets   List secrets mounted in a project's agent shell
+  ls             List running agent containers (-a stopped, --pretty boxes, --watch live)
+  secrets add    Load a file as a podman secret for a project's agent shell
+  secrets ls     List secrets mounted in a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
@@ -53,13 +53,13 @@ Options for 'enter':
   to serve it over A2A) and .agentsbox/config.toml (AGENT_NAME / A2A_AGENT
   defaults; CLI flags override).
 
-Options for 'load-secret' (agentsbox load-secret <file> [options]):
+Options for 'secrets add' (agentsbox secrets add <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
   --project DIR  Project the secret belongs to (default: current directory)
   --global       Mount in every project's agent shell (not just one project)
 
-Options for 'list-secrets':
+Options for 'secrets ls':
   --project DIR  Project to list secrets for (default: current directory)
   --global       List only global secrets (mounted in every project)
 EOF
@@ -86,7 +86,7 @@ cmd_enter() {
     done
 
     # Project dir defaults to the current directory; canonicalize to an absolute
-    # path so the project hash lines up across enter / load-secret / list-secrets.
+    # path so the project hash lines up across enter / secrets add / secrets ls.
     workdir="${workdir:-$PWD}"
     [[ -d "$workdir" ]] || { echo "enter: no such directory: $workdir" >&2; exit 1; }
     workdir="$(cd "$workdir" && pwd)"
@@ -144,18 +144,18 @@ cmd_load_secret() {
             --name)    name="$2"; shift 2 ;;
             --project) project="$2"; project_set=1; shift 2 ;;
             --global)  global=1; shift ;;
-            -*)        echo "load-secret: unknown option: $1" >&2; exit 1 ;;
+            -*)        echo "secrets add: unknown option: $1" >&2; exit 1 ;;
             *)         file="$1"; shift ;;
         esac
     done
 
     if [[ -z "$file" ]]; then
-        echo "usage: agentsbox load-secret <file> [--target PATH] [--name NAME] [--project DIR | --global]" >&2
+        echo "usage: agentsbox secrets add <file> [--target PATH] [--name NAME] [--project DIR | --global]" >&2
         exit 1
     fi
-    [[ -f "$file" ]] || { echo "load-secret: no such file: $file" >&2; exit 1; }
+    [[ -f "$file" ]] || { echo "secrets add: no such file: $file" >&2; exit 1; }
     if [[ -n "$global" && -n "$project_set" ]]; then
-        echo "load-secret: --global and --project are mutually exclusive" >&2
+        echo "secrets add: --global and --project are mutually exclusive" >&2
         exit 1
     fi
 
@@ -169,7 +169,7 @@ cmd_load_secret() {
         # run step can mount globals into every project's shell.
         secret="agent-global-$name"
     else
-        [[ -d "$project" ]] || { echo "load-secret: no such project dir: $project" >&2; exit 1; }
+        [[ -d "$project" ]] || { echo "secrets add: no such project dir: $project" >&2; exit 1; }
         # Canonicalize to match the workdir string make.nu hashes (it uses the
         # --workdir value passed by `enter`), so the project hash lines up at run time.
         project="$(cd "$project" && pwd)"
@@ -199,6 +199,19 @@ cmd_load_secret() {
 
 cmd_list_secrets() {
     exec "$SCRIPT_DIR/bin/list-secrets" "$@"
+}
+
+# Group command: `agentsbox secrets <add|ls> [options]`.
+cmd_secrets() {
+    local sub="${1:-}"
+    [[ $# -gt 0 ]] && shift
+    case "$sub" in
+        add)            cmd_load_secret "$@" ;;
+        ls)             cmd_list_secrets "$@" ;;
+        help|-h|--help) echo "Usage: agentsbox secrets <add|ls> [options]  (see 'agentsbox help')" ;;
+        "")             echo "usage: agentsbox secrets <add|ls> [options]" >&2; exit 1 ;;
+        *)              echo "secrets: unknown subcommand: $sub (expected add|ls)" >&2; exit 1 ;;
+    esac
 }
 
 cmd_install_skills() {
@@ -249,9 +262,8 @@ fi
 case "$1" in
     enter)          shift; cmd_enter "$@" ;;
     run)            shift; cmd_enter "$@" ;; # alias for enter (backwards compat)
-    list)           shift; cmd_list "$@" ;;
-    load-secret)    shift; cmd_load_secret "$@" ;;
-    list-secrets)   shift; cmd_list_secrets "$@" ;;
+    ls)             shift; cmd_list "$@" ;;
+    secrets)        shift; cmd_secrets "$@" ;;
     install-skills) shift; cmd_install_skills "$@" ;;
     update)         shift; cmd_update ;;
     doctor)         shift; cmd_doctor "$@" ;;

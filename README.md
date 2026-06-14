@@ -22,7 +22,7 @@ For example NPM token. We can do that:
 
 ```bash
 # while in project1 dir
-agentsbox load-secret ~/.npmrc
+agentsbox secrets add ~/.npmrc
 ```
 
 ...and project(1) now has `.npmrc` access in the sandbox.
@@ -44,9 +44,9 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 | Command                        | Description                                                                       |
 | ------------------------------ | --------------------------------------------------------------------------------- |
 | `agentsbox enter`              | Enter an agent shell in the current directory                                     |
-| `agentsbox list`               | List running agent containers (pass `-a` for stopped too)                         |
-| `agentsbox load-secret <file>` | Load a file as a podman secret, mounted into a project's agent shell              |
-| `agentsbox list-secrets`       | List the secrets mounted into a project's agent shell                             |
+| `agentsbox ls`                 | List running agent containers (pass `-a` for stopped too)                         |
+| `agentsbox secrets add <file>` | Load a file as a podman secret, mounted into a project's agent shell              |
+| `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
 | `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
 | `agentsbox update`             | Pull the latest base image and rebuild the container                              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |
@@ -59,16 +59,16 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 ## Secrets
 
 For credentials a project needs — a private-registry `.npmrc`, a `.env`, a deploy token,
-cloud creds — use `agentsbox load-secret`. It stores the file as a podman secret and mounts it
+cloud creds — use `agentsbox secrets add`. It stores the file as a podman secret and mounts it
 (read-only) into the agent shell. By default a secret is scoped to **one project** and mounts
 only into that project's shell; `--global` mounts it into **every** project's shell.
 
 ```bash
 cd ~/src/my-project
-agentsbox load-secret ./.env                           # this project, mounts at /root/.env
-agentsbox load-secret ./gh-token --target /root/.config/gh/hosts.yml
-agentsbox load-secret ~/secrets/key --project ~/src/other
-agentsbox load-secret ~/.npmrc --target /root/.npmrc --global   # all projects
+agentsbox secrets add ./.env                           # this project, mounts at /root/.env
+agentsbox secrets add ./gh-token --target /root/.config/gh/hosts.yml
+agentsbox secrets add ~/secrets/key --project ~/src/other
+agentsbox secrets add ~/.npmrc --target /root/.npmrc --global   # all projects
 ```
 
 If a project secret and a global one share a target, the project one wins.
