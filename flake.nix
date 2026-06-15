@@ -58,21 +58,6 @@
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)
             export PATH="$AGENTS_TOOLS_DIR/bin:$PATH"
-
-            nu --no-config-file -c '
-              print ""
-              print "Available commands:"
-              print ([
-                [command, description];
-                ["agentsbox enter", "Enter an agent shell in the current directory"]
-                ["agentsbox list", "List running agent containers"]
-                ["agentsbox load-secret", "Load a file as a podman secret for a project"]
-                ["agentsbox list-secrets", "List secrets mounted in a project agent shell"]
-                ["agentsbox install-skills", "Install bundled skills into ~/.agents/skills"]
-                ["agentsbox update", "Pull latest base image and rebuild"]
-                ["agentsbox doctor", "Check host environment for required tooling"]
-              ] | table --index false)
-            '
           '';
         };
       }
