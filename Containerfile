@@ -26,6 +26,14 @@ RUN mkdir -p /root/.config/pnpm \
  && printf 'storeDir: /pnpm-store\npackageImportMethod: copy\n' \
     > /root/.config/pnpm/config.yaml
 
+# Bake in the Zellij config. It used to be bind-mounted from the package at run
+# time, but on macOS podman runs in a Linux VM that can't see the host's
+# /nix/store (where the package lives), so the mount failed with `statfs ... no
+# such file or directory`. Copying it into the image at build time works on every
+# host: the build context streams from the host, unlike runtime bind mounts.
+# zellij reads $XDG_CONFIG_HOME/zellij/config.kdl (XDG_CONFIG_HOME=/root/.config).
+COPY zellij-config.kdl /root/.config/zellij/config.kdl
+
 # Allow git to work on mounted repositories in /workspace
 RUN git config --system safe.directory /workspace
 

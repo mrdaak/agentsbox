@@ -117,17 +117,8 @@ export def "main run" [
     let container = $"agent-($workdir | path basename)-($hash)"
 
     # Host config dirs the bind mounts expect to exist.
-    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills" $"($home)/.config/agentsbox"
+    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills"
     touch $"($home)/.claude.json"
-
-    # Stage zellij-config.kdl from the package into $HOME so podman can bind-mount
-    # it. On macOS podman runs in a Linux VM that shares $HOME but NOT /nix/store
-    # (where the package lives), so mounting the config straight from (root)
-    # fails with `statfs ... no such file or directory`. Copying it under $HOME
-    # first works on both macOS and Linux. (root) is on the host filesystem here,
-    # so this cp always succeeds; only the podman bind mount is VM-scoped.
-    let zellij_config = $"($home)/.config/agentsbox/zellij-config.kdl"
-    cp $"((root))/zellij-config.kdl" $zellij_config
 
     mut run_args = [
         -it --rm --name $container
@@ -137,7 +128,6 @@ export def "main run" [
         -e OPENCODE_CONFIG_DIR=/root/.config/opencode
         -v $"($NIX_VOLUME):/nix"
         -v $"($PNPM_VOLUME):/pnpm-store"
-        -v $"($zellij_config):/root/.config/zellij/config.kdl:Z,ro"
         -v $"($home)/.agents:/root/.agents:Z"
         -v $"($home)/.opencode/config:/root/.config/opencode:Z"
         -v $"($home)/.opencode/data:/root/.local/share/opencode:Z"
