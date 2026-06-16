@@ -46,6 +46,9 @@ Options for 'enter':
   --web          Serve Zellij's web client; maps container 8082 to host
                  <index>8082 (agent 1 -> 18082, agent 2 -> 28082, ...) and
                  prints a one-time login token on enter
+  --web-bind ADDR  Host address the web port binds to (implies --web). One of:
+                 loopback (default, host-only), all (0.0.0.0, LAN+tailnet),
+                 tailscale (the host's tailnet IP), or an explicit address
   --a2a [AGENT]  Enable agent-to-agent messaging (start the A2A listener and
                  join the shared agentsbox-net network). AGENT picks the
                  headless agent that answers incoming messages: claude
@@ -69,11 +72,12 @@ EOF
 }
 
 cmd_enter() {
-    local auth="" a2a="" a2a_agent="" agent_name="" workdir="" web=""
+    local auth="" a2a="" a2a_agent="" agent_name="" workdir="" web="" web_bind=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
             --web)  web=1; shift ;;
+            --web-bind) web=1; web_bind="$2"; shift 2 ;;
             --a2a)
                 a2a=1
                 # Optional value selects the headless agent; anything else (e.g.
@@ -150,7 +154,26 @@ cmd_enter() {
             index=$((index + 1))
             web_port=$((index * 10000 + 8082))
         done
-        run_args+=(--web --web-port "$web_port")
+
+        # Host bind address for the published port. Default loopback keeps the
+        # session host-only; 'all' (0.0.0.0) and 'tailscale' (the host's tailnet
+        # IP) widen it so other devices — e.g. a phone on the same tailnet — can
+        # reach it. zellij's one-time token still gates access. An explicit value
+        # is passed through as-is.
+        local bind_addr
+        case "${web_bind:-loopback}" in
+            loopback|"") bind_addr=127.0.0.1 ;;
+            all)         bind_addr=0.0.0.0 ;;
+            tailscale)
+                bind_addr="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+                if [[ -z "$bind_addr" ]]; then
+                    echo "enter: --web-bind tailscale: no Tailscale IPv4 (is tailscale up?); using 127.0.0.1" >&2
+                    bind_addr=127.0.0.1
+                fi
+                ;;
+            *)           bind_addr="$web_bind" ;;
+        esac
+        run_args+=(--web --web-port "$web_port" --web-bind "$bind_addr")
     fi
 
     exec nu "$SCRIPT_DIR/make.nu" "${run_args[@]}"

@@ -102,6 +102,7 @@ export def "main run" [
     --agent-name: string              # A2A alias (default: workdir basename)
     --web                             # serve Zellij's web client on --web-port
     --web-port: int = 0               # host port mapped to container 8082 (see bin/agentsbox)
+    --web-bind: string = "127.0.0.1"  # host address the web port binds to (see bin/agentsbox)
 ] {
     if ($workdir | is-empty) {
         print -e "WORKDIR is not set. Usage: nu make.nu run --workdir ~/src/my-project"
@@ -143,9 +144,12 @@ export def "main run" [
         # bridge network DNATs a published port to the container's interface IP,
         # not its loopback, so without the relay a loopback-only server is
         # unreachable (the connect resets: ERR_EMPTY_RESPONSE). Publish the
-        # relay's port (8082) to the chosen host slot; WEB_PORT tells the
-        # entrypoint which host port to print in the access URL.
-        $run_args = ($run_args | append ["-p" $"127.0.0.1:($web_port):8082" "-e" "WEB_ENABLED=1" "-e" $"WEB_PORT=($web_port)"])
+        # relay's port (8082) to the chosen host slot, bound to --web-bind.
+        # WEB_HOST/WEB_PORT tell the entrypoint what to print in the access URL:
+        # the bind address, except 0.0.0.0 isn't a connect target so show
+        # loopback (other devices substitute the host's reachable IP).
+        let url_host = (if $web_bind == "0.0.0.0" { "127.0.0.1" } else { $web_bind })
+        $run_args = ($run_args | append ["-p" $"($web_bind):($web_port):8082" "-e" "WEB_ENABLED=1" "-e" $"WEB_PORT=($web_port)" "-e" $"WEB_HOST=($url_host)"])
     }
     if $a2a {
         $run_args = ($run_args | append [
