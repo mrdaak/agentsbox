@@ -29,29 +29,45 @@ if [ "${A2A_ENABLED:-}" = "1" ] && [ ! -f /tmp/a2a-listener.pid ]; then
     echo $! > /tmp/a2a-listener.pid
 fi
 
-# Start Zellij's web client once, before any nix re-exec (same double-start
-# guard as the A2A listener: this script re-execs itself through `nix develop`).
+# Launch the interactive Zellij session, optionally fronted by the web client.
 #
-# Zellij binds the loopback only (127.0.0.1:8083). podman's bridge network
+# The web server MUST start in the SAME shell context as the `attach` below: a
+# Zellij session is keyed by both the zellij version AND $TMPDIR (its socket
+# lives under $TMPDIR/zellij-<uid>), and `nix develop` changes both — the dev
+# shell may pin a different zellij and it sets its own TMPDIR. If the web server
+# ran in the outer shell (global zellij, /tmp) while the session ran in the dev
+# shell (its zellij + nix-shell TMPDIR), the two would land in different socket
+# dirs and the browser would never see the terminal's session — it could only
+# create new ones. Starting both from here guarantees one server, one version,
+# one socket dir, so the browser attaches to the very session in the terminal.
+#
+# Web wiring: Zellij binds the loopback only (127.0.0.1:8083); podman's bridge
 # DNATs the published port to the container's external interface, not its
-# loopback, so we relay 0.0.0.0:8082 -> 127.0.0.1:8083 with socat to bridge the
-# two without Zellij itself binding a public address. make.nu publishes the
-# relay port (8082) to the host on $WEB_PORT. The login token is shown only once
-# and cannot be retrieved, so print it here on enter
-# (see https://zellij.dev/documentation/web-client.html).
-if [ "${WEB_ENABLED:-}" = "1" ] && [ ! -f /tmp/zellij-web.started ]; then
-    touch /tmp/zellij-web.started
-    zellij web --ip 127.0.0.1 --port 8083 --daemonize >/tmp/zellij-web.log 2>&1 || true
-    socat TCP-LISTEN:8082,fork,reuseaddr TCP:127.0.0.1:8083 >/tmp/zellij-web-relay.log 2>&1 &
-    echo ""
-    echo "Zellij web client: http://127.0.0.1:${WEB_PORT:-8082}"
-    echo "Login token (shown once — copy it now):"
-    zellij web --create-token || echo "  (failed to create token; see /tmp/zellij-web.log)"
-    echo ""
-fi
+# loopback, so socat relays 0.0.0.0:8082 -> 127.0.0.1:8083 to bridge the two
+# without Zellij binding a public address. make.nu publishes 8082 to the host on
+# $WEB_PORT. The login token is shown only once and cannot be retrieved, so
+# print it here (see https://zellij.dev/documentation/web-client.html). The
+# guard file makes this idempotent across the `nix develop` re-exec.
+start_session() {
+    if [ "${WEB_ENABLED:-}" = "1" ] && [ ! -f /tmp/zellij-web.started ]; then
+        touch /tmp/zellij-web.started
+        zellij web --ip 127.0.0.1 --port 8083 --daemonize >/tmp/zellij-web.log 2>&1 || true
+        socat TCP-LISTEN:8082,fork,reuseaddr TCP:127.0.0.1:8083 >/tmp/zellij-web-relay.log 2>&1 &
+        echo ""
+        echo "Web session: http://127.0.0.1:${WEB_PORT:-8082}/${SESSION_NAME}"
+        echo "Login token (shown once — copy it now):"
+        zellij web --create-token || echo "  (failed to create token; see /tmp/zellij-web.log)"
+        echo ""
+        # `zellij attach` below takes over the terminal and scrolls the token
+        # out of view; the token can't be retrieved later, so pause to let it be
+        # copied first. Skip the pause when there's no TTY to read from.
+        [ -t 0 ] && read -rp "Copy the token above, then press Enter to attach… " _
+    fi
+    exec zellij attach --create "$SESSION_NAME"
+}
 
 if [ -n "$IN_NIX_SHELL" ]; then
-    exec zellij attach --create "$SESSION_NAME"
+    start_session
 fi
 
 ask_load() {
@@ -132,4 +148,4 @@ elif [ -f /workspace/shell.nix ]; then
     fi
 fi
 
-exec zellij attach --create "$SESSION_NAME"
+start_session

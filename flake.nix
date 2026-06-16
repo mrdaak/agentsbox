@@ -53,7 +53,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.podman pkgs.zellij pkgs.nushell ];
+          buildInputs = [ pkgs.podman pkgs.nushell ];
 
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)
