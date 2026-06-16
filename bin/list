@@ -12,12 +12,33 @@
 # of this network in `podman ps` is how we tell an agent is A2A-enabled.
 const A2A_NET = "agentsbox-net"
 
+# The web client listens on container port 8082 (see bin/shell-entrypoint), so a
+# published 8082 mapping is how we tell an agent is web-enabled. Given podman's
+# ports string, pull the host <addr>:<port> that maps to 8082 and build the URL
+# the entrypoint prints: http://<host:port>/<session-id>. The session id is the
+# agent's Zellij session — its display name, sanitized the same way the
+# entrypoint sanitizes AGENT_NAME (anything outside [A-Za-z0-9_-] -> '-').
+def web-url [ports: string, name: string] {
+    let mapping = (
+        $ports | split row "," | str trim
+        | where {|m| $m | str contains "->8082/"} | get 0?
+    )
+    if ($mapping | is-empty) { return null }
+    let hostport = ($mapping | split row "->" | first | str trim)
+    let session = ((display-name $name) | str replace --all --regex '[^A-Za-z0-9_-]' '-')
+    $"http://($hostport)/($session)"
+}
+
 # Builds one container's box as a list of lines plus its visible width, with
-# the name sitting in the top edge:
-#   ╭─ agent-foo-1234abcd ─────────╮
-#   │ status: Up 3 minutes         │
-#   │ ports:  0.0.0.0:8080->80/tcp │
-#   ╰──────────────────────────────╯
+# the name sitting in the top edge. Every box shows status; web-enabled agents
+# also carry their web client URL (host:port/session-id):
+#   ╭─ web-agent ──────────────────────────╮
+#   │ status: running                       │
+#   │ http://127.0.0.1:18082/web-agent      │
+#   ╰───────────────────────────────────────╯
+#   ╭─ plain-agent ─────╮
+#   │ status: running   │
+#   ╰───────────────────╯
 # Container names are agent-<dir>-<hash>; in pretty mode we show just <dir>
 # (the project), dropping the leading "agent-" and the trailing hash. <dir> may
 # itself contain hyphens, so split, drop the first and last segments, rejoin.
@@ -26,15 +47,19 @@ def display-name [name: string] {
     if ($parts | length) >= 3 { $parts | skip 1 | drop 1 | str join "-" } else { $name }
 }
 
-def box-lines [c: record, min_width: int = 0] {
+def box-lines [c: record, min_width: int = 0, min_lines: int = 0] {
     let name = (display-name $c.name)
-    let body = [
-        $"status: ($c.status)"
-        $"ports:  (if ($c.ports | is-empty) { '—' } else { $c.ports })"
-    ]
-    # Measure in display columns (graphemes), not bytes: the em-dash placeholder
-    # and any non-ASCII in a name are multi-byte but occupy one column, and
-    # `fill` below pads by column too — so the math must agree with it.
+    # Every box shows status; only web-enabled agents (those with a published
+    # 8082 mapping) add their client URL as a second body line. Web and plain
+    # agents thus differ in height, so `min_lines` lets the caller pad the body
+    # with blank lines to a uniform height — boxes laid side by side in a grid
+    # must be equal height for their lines to zip together.
+    let core = ([$"status: ($c.status)"] | append (if ($c.web | is-empty) { [] } else { [$c.web] }))
+    let pad = ([0 ($min_lines - ($core | length))] | math max)
+    let body = ($core | append (0..<$pad | each { "" }))
+    # Measure in display columns (graphemes), not bytes: any non-ASCII in a name
+    # is multi-byte but occupies one column, and `fill` below pads by column too
+    # — so the math must agree with it.
     let namelen = ($name | str length --grapheme-clusters)
     let bodymax = ($body | each {|l| $l | str length --grapheme-clusters} | math max)
     # Interior width between the corners: enough for the decorated name
@@ -62,9 +87,12 @@ def box-lines [c: record, min_width: int = 0] {
 # separated by a blank spacer. Returns the rendered lines plus the block's
 # overall width (the widest row), which a caller can use to size a frame.
 def box-grid [rows: list, per_row: int] {
-    # Force every box to the widest interior width so columns align across rows.
-    let target = ($rows | each {|c| (box-lines $c).width - 2 } | math max)
-    let boxes = ($rows | each {|c| box-lines $c $target })
+    # Force every box to the widest interior width AND the tallest body so columns
+    # align across rows and equal-height boxes can be zipped line by line below.
+    let probe = ($rows | each {|c| box-lines $c })
+    let target = ($probe | each {|b| $b.width - 2 } | math max)
+    let target_lines = (($probe | each {|b| $b.lines | length } | math max) - 2)
+    let boxes = ($rows | each {|c| box-lines $c $target $target_lines })
     let sep = "  "
     let sep_w = ($sep | str length --grapheme-clusters)
     let nlines = ($boxes | first | get lines | length)
@@ -122,10 +150,11 @@ def collect-rows [all: bool] {
 
     # `\t`-separated template (not `table ...`) so each field lands in its own
     # column after we split — Go interprets the `\t`, same as the old bash form.
-    # `.Networks` lets us flag A2A-enabled agents (those on the shared bus).
+    # `.State` is the bare lifecycle word (running/exited) rather than `.Status`'s
+    # verbose "Up 3 minutes"; `.Networks` lets us flag A2A-enabled agents.
     let out = (
         ^podman ps --filter "name=^agent-" ...$extra
-            --format '{{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Networks}}'
+            --format '{{.Names}}\t{{.State}}\t{{.Ports}}\t{{.Networks}}'
         | str trim
     )
     if ($out | is-empty) { return [] }
@@ -133,10 +162,11 @@ def collect-rows [all: bool] {
     $out | lines | each {|line|
         let f = ($line | split row "\t")
         let nets = ($f | get 3? | default "" | split row "," | str trim)
+        let name = ($f | get 0)
         {
-            name:   ($f | get 0),
+            name:   $name,
             status: ($f | get 1),
-            ports:  ($f | get 2? | default ""),
+            web:    (web-url ($f | get 2? | default "") $name),
             a2a:    ($A2A_NET in $nets),
         }
     }
