@@ -29,6 +29,27 @@ if [ "${A2A_ENABLED:-}" = "1" ] && [ ! -f /tmp/a2a-listener.pid ]; then
     echo $! > /tmp/a2a-listener.pid
 fi
 
+# Start Zellij's web client once, before any nix re-exec (same double-start
+# guard as the A2A listener: this script re-execs itself through `nix develop`).
+#
+# Zellij binds the loopback only (127.0.0.1:8083). podman's bridge network
+# DNATs the published port to the container's external interface, not its
+# loopback, so we relay 0.0.0.0:8082 -> 127.0.0.1:8083 with socat to bridge the
+# two without Zellij itself binding a public address. make.nu publishes the
+# relay port (8082) to the host on $WEB_PORT. The login token is shown only once
+# and cannot be retrieved, so print it here on enter
+# (see https://zellij.dev/documentation/web-client.html).
+if [ "${WEB_ENABLED:-}" = "1" ] && [ ! -f /tmp/zellij-web.started ]; then
+    touch /tmp/zellij-web.started
+    zellij web --ip 127.0.0.1 --port 8083 --daemonize >/tmp/zellij-web.log 2>&1 || true
+    socat TCP-LISTEN:8082,fork,reuseaddr TCP:127.0.0.1:8083 >/tmp/zellij-web-relay.log 2>&1 &
+    echo ""
+    echo "Zellij web client: http://127.0.0.1:${WEB_PORT:-8082}"
+    echo "Login token (shown once — copy it now):"
+    zellij web --create-token || echo "  (failed to create token; see /tmp/zellij-web.log)"
+    echo ""
+fi
+
 if [ -n "$IN_NIX_SHELL" ]; then
     exec zellij attach --create "$SESSION_NAME"
 fi

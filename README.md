@@ -54,6 +54,8 @@ This puts `agentsbox` on your `PATH`. Run it from any project directory — that
 
 `agentsbox enter --a2a` (enable [agent-to-agent messaging](#agent-to-agent-messaging-a2a)).
 
+`agentsbox enter --web` serves [Zellij's web client](https://zellij.dev/documentation/web-client.html). It listens on `127.0.0.1:8082` in the container; on the host it's published to `<index>8082`, where the index is the agent's slot in `agentsbox ls` (agent 1 → `18082`, agent 2 → `28082`, …), so multiple agents never collide. A one-time login token prints on enter — copy it then, as it can't be retrieved later.
+
 ---
 
 ## Secrets

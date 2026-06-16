@@ -43,6 +43,9 @@ Subcommands:
 
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
+  --web          Serve Zellij's web client; maps container 8082 to host
+                 <index>8082 (agent 1 -> 18082, agent 2 -> 28082, ...) and
+                 prints a one-time login token on enter
   --a2a [AGENT]  Enable agent-to-agent messaging (start the A2A listener and
                  join the shared agentsbox-net network). AGENT picks the
                  headless agent that answers incoming messages: claude
@@ -66,10 +69,11 @@ EOF
 }
 
 cmd_enter() {
-    local auth="" a2a="" a2a_agent="" agent_name="" workdir=""
+    local auth="" a2a="" a2a_agent="" agent_name="" workdir="" web=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
+            --web)  web=1; shift ;;
             --a2a)
                 a2a=1
                 # Optional value selects the headless agent; anything else (e.g.
@@ -129,6 +133,26 @@ cmd_enter() {
     local run_args=(run --workdir "$workdir" --a2a-agent "$a2a_agent" --agent-name "$agent_name")
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
+
+    # --web exposes Zellij's web client (https://zellij.dev/documentation/web-client.html).
+    # It listens on 8082 inside the container; on the host we map it to
+    # <index>8082 so several agents never collide on one port: agent 1 -> 18082,
+    # agent 2 -> 28082, etc. The index is this agent's slot in `agentsbox ls` —
+    # the lowest 1-based slot not already taken by a running agent's web port
+    # (so a stopped agent's slot gets reused rather than skipped).
+    if [[ -n "$web" ]]; then
+        local used index web_port
+        used="$(podman ps --filter "name=^agent-" --format '{{.Ports}}' 2>/dev/null \
+            | grep -oE '[0-9]+->8082/' | grep -oE '^[0-9]+' || true)"
+        index=1
+        web_port=$((index * 10000 + 8082))
+        while printf '%s\n' "$used" | grep -qx "$web_port"; do
+            index=$((index + 1))
+            web_port=$((index * 10000 + 8082))
+        done
+        run_args+=(--web --web-port "$web_port")
+    fi
+
     exec nu "$SCRIPT_DIR/make.nu" "${run_args[@]}"
 }
 

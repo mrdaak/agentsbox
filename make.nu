@@ -100,6 +100,8 @@ export def "main run" [
     --a2a                             # join agentsbox-net and start the A2A listener
     --a2a-agent: string = "claude"    # headless agent answering A2A messages
     --agent-name: string              # A2A alias (default: workdir basename)
+    --web                             # serve Zellij's web client on --web-port
+    --web-port: int = 0               # host port mapped to container 8082 (see bin/agentsbox)
 ] {
     if ($workdir | is-empty) {
         print -e "WORKDIR is not set. Usage: nu make.nu run --workdir ~/src/my-project"
@@ -134,6 +136,16 @@ export def "main run" [
 
     if $auth {
         $run_args = ($run_args | append ["-p" "1455:1455"])
+    }
+    if $web {
+        # Zellij's web client binds the container loopback; a socat relay in the
+        # entrypoint bridges the container's external interface to it. podman's
+        # bridge network DNATs a published port to the container's interface IP,
+        # not its loopback, so without the relay a loopback-only server is
+        # unreachable (the connect resets: ERR_EMPTY_RESPONSE). Publish the
+        # relay's port (8082) to the chosen host slot; WEB_PORT tells the
+        # entrypoint which host port to print in the access URL.
+        $run_args = ($run_args | append ["-p" $"127.0.0.1:($web_port):8082" "-e" "WEB_ENABLED=1" "-e" $"WEB_PORT=($web_port)"])
     }
     if $a2a {
         $run_args = ($run_args | append [

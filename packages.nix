@@ -29,6 +29,7 @@ pkgs.buildEnv {
     opencode
     unzip
     gnused
+    socat
   ]) ++ [
     claude-code
     codex
