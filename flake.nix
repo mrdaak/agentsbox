@@ -21,7 +21,7 @@
 
         agentsbox = pkgs.stdenv.mkDerivation {
           pname = "agentsbox";
-          version = "0.1.1";
+          version = "0.1.2";
           src = ./.;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
