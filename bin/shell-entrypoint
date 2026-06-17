@@ -48,6 +48,23 @@ fi
 # $WEB_PORT. The login token is shown only once and cannot be retrieved, so
 # print it here (see https://zellij.dev/documentation/web-client.html). The
 # guard file makes this idempotent across the `nix develop` re-exec.
+# Write a Zellij layout (stock default, but the main pane runs $AGENTSBOX_AGENT).
+AGENT_LAYOUT="${XDG_CONFIG_HOME:-/root/.config}/zellij/layouts/agentsbox.kdl"
+write_agent_layout() {
+    mkdir -p "$(dirname "$AGENT_LAYOUT")"
+    cat > "$AGENT_LAYOUT" <<EOF
+layout {
+    pane size=1 borderless=true {
+        plugin location="tab-bar"
+    }
+    pane command="$AGENTSBOX_AGENT"
+    pane size=1 borderless=true {
+        plugin location="status-bar"
+    }
+}
+EOF
+}
+
 start_session() {
     if [ "${WEB_ENABLED:-}" = "1" ] && [ ! -f /tmp/zellij-web.started ]; then
         touch /tmp/zellij-web.started
@@ -62,6 +79,11 @@ start_session() {
         # out of view; the token can't be retrieved later, so pause to let it be
         # copied first. Skip the pause when there's no TTY to read from.
         [ -t 0 ] && read -rp "Copy the token above, then press Enter to attach… " _
+    fi
+    # With an agent configured, open straight into it; otherwise a plain shell.
+    if [ -n "${AGENTSBOX_AGENT:-}" ]; then
+        write_agent_layout
+        exec zellij attach --create "$SESSION_NAME" options --default-layout "$AGENT_LAYOUT"
     fi
     exec zellij attach --create "$SESSION_NAME"
 }

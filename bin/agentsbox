@@ -54,6 +54,13 @@ Options for 'enter':
                  headless agent that answers incoming messages: claude
                  (default) or codex.
   --name NAME    A2A agent alias other agents address (default: dir basename)
+  --agent NAME   Auto-launch this agent in the session instead of a plain shell
+                 (e.g. claude, codex, opencode). 'none' forces a plain shell.
+                 Overrides the 'agent' key in ~/.config/agentsbox.toml.
+
+  Set a default agent for every project in ~/.config/agentsbox.toml:
+      agent = "claude"
+  so 'agentsbox enter' opens it without running 'claude' by hand.
 
   A project may ship .agentsbox/listen (a custom A2A server — you'll be asked
   to serve it over A2A) and .agentsbox/config.toml (AGENT_NAME / A2A_AGENT
@@ -73,11 +80,13 @@ EOF
 
 cmd_enter() {
     local auth="" a2a="" a2a_agent="" agent_name="" workdir="" web="" web_bind=""
+    local launch_agent="" launch_agent_set=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
             --web)  web=1; shift ;;
             --web-bind) web=1; web_bind="$2"; shift 2 ;;
+            --agent) launch_agent="$2"; launch_agent_set=1; shift 2 ;;
             --a2a)
                 a2a=1
                 # Optional value selects the headless agent; anything else (e.g.
@@ -113,6 +122,15 @@ cmd_enter() {
     [[ -n "$agent_name" ]] || agent_name="$(basename "$workdir")"
     [[ -n "$a2a_agent" ]]  || a2a_agent="claude"
 
+    # Agent to auto-launch in the session. Precedence: --agent > agentsbox.toml `agent`.
+    # "none"/unset keeps the old plain-shell behavior. config_value parses (never runs) the TOML.
+    local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+    [[ -n "$launch_agent_set" ]] || launch_agent="$(config_value "$global_conf" agent)"
+    if [[ -n "$launch_agent" && "$launch_agent" != "none" ]]; then
+        [[ "$launch_agent" =~ ^[A-Za-z0-9_-]+$ ]] \
+            || { echo "enter: invalid agent '$launch_agent' (expected a bare command name, e.g. claude, codex, opencode)" >&2; exit 1; }
+    fi
+
     # A project can ship its own A2A server at .agentsbox/listen (e.g. a wiki).
     # If the user didn't pass --a2a, offer to serve it — but only interactively,
     # so joining the shared mesh stays a conscious choice (the file is boot code
@@ -137,6 +155,7 @@ cmd_enter() {
     local run_args=(run --workdir "$workdir" --a2a-agent "$a2a_agent" --agent-name "$agent_name")
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
+    [[ -n "$launch_agent" && "$launch_agent" != "none" ]] && run_args+=(--agent "$launch_agent")
 
     # --web exposes Zellij's web client (https://zellij.dev/documentation/web-client.html).
     # It listens on 8082 inside the container; on the host we map it to

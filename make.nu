@@ -116,6 +116,7 @@ export def "main run" [
     --a2a                             # join agentsbox-net and start the A2A listener
     --a2a-agent: string = "claude"    # headless agent answering A2A messages
     --agent-name: string              # A2A alias (default: workdir basename)
+    --agent: string = ""              # interactive agent to auto-launch in the session (claude/codex/opencode)
     --web                             # serve Zellij's web client on --web-port
     --web-port: int = 0               # host port mapped to container 8082 (see bin/agentsbox)
     --web-bind: string = "127.0.0.1"  # host address the web port binds to (see bin/agentsbox)
@@ -173,6 +174,10 @@ export def "main run" [
             -e A2A_ENABLED=1
             -e $"A2A_AGENT=($a2a_agent)"
         ])
+    }
+    # The entrypoint reads AGENTSBOX_AGENT to open the session straight into this agent.
+    if ($agent | is-not-empty) and $agent != "none" {
+        $run_args = ($run_args | append ["-e" $"AGENTSBOX_AGENT=($agent)"])
     }
 
     $run_args = ($run_args | append [
