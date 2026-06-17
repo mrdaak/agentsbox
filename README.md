@@ -22,10 +22,10 @@ But of what use is an agent kept in the dark? agentsbox can hand agents the [sec
 
 ## Install
 
-- [Nix](https://nixos.org/download/) with flakes enabled
+- [Nix](https://nixos.org/download/) package manager
 
 ```bash
-nix profile install github:mrdakdev/agentsbox
+nix profile add github:mrdakdev/agentsbox
 ```
 
 Now you can run `agentsbox` from any project directory.
