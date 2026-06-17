@@ -12,9 +12,9 @@ cd project1
 agentsbox enter
 ```
 
-...and you are in a secure shell access-limited to the project(1). (green border = sandbox)
+You're now in a secure shell limited to that one project — the **green border** means you're sandboxed.
 
-now you can run and configure any of the named agents — or, if you already have one configured on your host OS, the sandbox picks it up automatically and your config, skills, and MCPs persist across runs.
+Run any of the supported agents here. Already have one set up on your host? agentsbox picks up that config automatically, and your config, skills, and MCPs persist across runs.
 
 But of what use is an agent kept in the dark? agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
 
@@ -101,24 +101,20 @@ Done? `git merge wt1` and `git worktree remove wt1`.
 ## Agent-to-agent messaging (A2A)
 
 An agent working in one project can ask the agent in another project a question.
-This is a minimal subset of the [A2A protocol](https://a2a-protocol.org/) —
-JSON-RPC 2.0 `message/send` over HTTP — wired between containers.
 
 Start each project's shell with `--a2a`:
 
 ```bash
-# terminal A
-cd ~/src/repo2 && agentsbox enter --a2a      # listens as "repo2"
+# folder "backend"
+agentsbox enter --a2a      # listens as "backend"
 
-# terminal B
-cd ~/src/repo1 && agentsbox enter --a2a
+# folder "frontend"
+agentsbox enter --a2a      # listens as "frontend"
 ```
 
-The A2A listener answers incoming messages by running a headless agent over the
-container's `/workspace`, using the same agent the session runs (the `agent` key
-in `~/.config/agentsbox.toml`, or `--agent`). Claude Code (`claude -p`) and Codex
-(`codex exec`, through the in-container wrapper that handles the nested-sandbox
-flags) are supported; anything else falls back to Claude Code.
+Each agent stays focused on its own project — the frontend agent keeps a clean, frontend-only
+context, and when it needs a backend API it just asks the backend agent instead of reaching into
+files it shouldn't see. You get a specialist per project, not one agent juggling everything.
 
 ---
 
