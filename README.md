@@ -146,3 +146,24 @@ cd ~/src/repo1 && agentsbox enter --a2a codex
 [Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers)
 - **Workspace-only** — the agent sees `/workspace` plus the explicitly-listed config mounts, nothing else
 - **no-new-privileges** — flag prevents privilege escalation inside the container
+
+---
+
+## Extras: right-click "Open in agentsbox" (macOS)
+
+In **Automator.app** create a new **Quick Action** that receives **folders** in **Finder**, add a **Run Shell Script** step set to **Pass input → as arguments**, and fill in the body with:
+
+```bash
+for DIR in "$@"; do
+  [ -n "$DIR" ] || continue
+  open -a Terminal "$DIR"
+  /usr/bin/osascript \
+    -e 'delay 0.6' \
+    -e 'tell application "Terminal"' \
+    -e 'activate' \
+    -e 'do script "agentsbox enter" in front window' \
+    -e 'end tell'
+done
+```
+
+Save it as "Open in agentsbox"; now right-click any folder → **Quick Actions** to open a Terminal there running `agentsbox enter` (approve the Terminal-control prompt on first run).
