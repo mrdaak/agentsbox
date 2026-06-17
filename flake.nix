@@ -21,13 +21,22 @@
 
         agentsbox = pkgs.stdenv.mkDerivation {
           pname = "agentsbox";
-          version = "0.1.3";
+          version = "0.1.4";
           src = ./.;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           dontConfigure = true;
           dontBuild = true;
+
+          # Do NOT rewrite shebangs. patchShebangs would turn the scripts'
+          # `#!/usr/bin/env bash` (and `…env node`) into hardcoded build-time
+          # /nix/store paths. bin/shell-entrypoint, listen-message and
+          # send-message are COPY'd into the container image, whose nix store
+          # has DIFFERENT store paths — so a patched shebang points at a bash
+          # that doesn't exist in the container and the entrypoint fails with
+          # `exec … No such file or directory`.
+          dontPatchShebangs = true;
 
           installPhase = ''
             runHook preInstall
