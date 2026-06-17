@@ -62,16 +62,32 @@ def secret-flags [hash: string] {
     | flatten
 }
 
-# Build the image, full output to the build log; on failure print the log
-# location to stderr and exit non-zero. A failed external aborts the script in
-# nushell, so the try/catch is what turns that into the Makefile's behavior.
+# Build the image. Full output still goes to the build log (via tee), but the
+# `STEP x/y` lines podman emits are surfaced as a single in-place progress line
+# so `enter` isn't a silent wait. On failure print the log location to stderr
+# and exit non-zero. A failed external aborts the script in nushell, so the
+# try/catch is what turns that into the Makefile's behavior.
 def build-image [] {
     let log = (build-log)
     try {
         cd (root)
-        podman build -t $"($IMAGE_NAME):latest" . out+err> $log
+        print "Building sandbox environment…"
+        (
+            podman build -t $"($IMAGE_NAME):latest" .
+            out+err>| tee { save --force --raw $log }
+            | lines
+            | each {|line|
+                let m = ($line | parse --regex 'STEP (?<n>\d+)/(?<total>\d+)')
+                if ($m | is-not-empty) {
+                    let s = ($m | first)
+                    print -n $"(char cr)(ansi -e '2K')  step ($s.n)/($s.total)"
+                }
+            }
+            | ignore
+        )
+        print $"(char cr)(ansi -e '2K')Sandbox environment ready."
     } catch {
-        print -e $"agentsbox: image build failed; see: ($log)"
+        print -e $"(char cr)(ansi -e '2K')agentsbox: image build failed; see: ($log)"
         exit 1
     }
 }
