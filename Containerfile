@@ -3,10 +3,6 @@ FROM ghcr.io/nixos/nix:2.34.7@sha256:bf1d938835ab96312f098fa6c2e9cab367728e0aad0
 # Enable flakes and use single-user builds inside the rootless container.
 RUN printf 'experimental-features = nix-command flakes\nbuild-users-group =\n' >> /etc/nix/nix.conf
 
-# Update nixpkgs channel and install packages
-RUN nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && \
-    nix-channel --update
-
 # Install all dev tools via nix in a single profile generation. packages.nix is
 # the source of truth for the tool set; it imports the version-pinned claude-code.nix and codex.nix.
 # --priority resolves collisions against packages already present in the base image's profile.

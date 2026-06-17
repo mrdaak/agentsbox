@@ -2,7 +2,10 @@
 #
 # Install with one profile generation:
 #   nix profile add --priority 4 -f ./packages.nix
-{ pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
+{ pkgs ? import (builtins.fetchTarball {
+url = "https://github.com/NixOS/nixpkgs/archive/nixos-26.05.tar.gz";
+  }) { config.allowUnfree = true; }
+}:
 
 let
   claude-code = (import ./claude-code.nix { inherit pkgs; }).claude-code;
