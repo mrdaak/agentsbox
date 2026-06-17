@@ -37,7 +37,7 @@ agentsbox secrets add ~/.npmrc
 nix profile install github:mrdakdev/agentsbox
 ```
 
-This puts `agentsbox` on your `PATH`. Run it from any project directory — that directory is mounted into the container.
+Now you can run `agentsbox` from any project directory.
 
 ## Commands
 
