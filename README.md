@@ -5,6 +5,8 @@ agentsbox
 
 Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
 
+Today's agents run commands, install packages, and act on web content autonomously — one bad instruction or compromised dependency shouldn't reach the rest of your machine.
+
 ```bash
 cd project1
 agentsbox enter
@@ -12,20 +14,9 @@ agentsbox enter
 
 ...and you are in a secure shell access-limited to the project(1). (green border = sandbox)
 
-now you can run and configure any of the named agents. But If you already have one configured on your host OS,
-sandbox will automatically pickup the configuration and you can continue from where you left of.
+now you can run and configure any of the named agents — or, if you already have one configured on your host OS, the sandbox picks it up automatically and your config, skills, and MCPs persist across runs.
 
-Agents state persists across runs! Skills, MCPs - all there!
-
-But of what use is an agent kept in the dark?! Every once in a while you might want agent to have access to a secret from host OS.
-For example NPM token. We can do that:
-
-```bash
-# while in project1 dir
-agentsbox secrets add ~/.npmrc
-```
-
-...and project(1) now has `.npmrc` access in the sandbox.
+But of what use is an agent kept in the dark? agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
 
 ---
 
@@ -54,7 +45,7 @@ Now you can run `agentsbox` from any project directory.
 
 `agentsbox enter --a2a` (enable [agent-to-agent messaging](#agent-to-agent-messaging-a2a)).
 
-`agentsbox enter --web` serves web client. You can access your session through web browser!
+`agentsbox enter --web` (drive your session from a [browser](#use-it-from-your-browser)).
 
 ---
 
@@ -134,6 +125,12 @@ cd ~/src/repo1 && agentsbox enter --a2a codex
 
 ---
 
+## Use it from your browser
+
+`agentsbox enter --web` serves your session over HTTP — drive the agent from any browser.
+
+---
+
 ## Security
 
 - **Containers**
@@ -166,4 +163,7 @@ for DIR in "$@"; do
 done
 ```
 
-Save it as "Open in agentsbox"; now right-click any folder → **Quick Actions** to open a Terminal there running `agentsbox enter` (approve the Terminal-control prompt on first run).
+
+
+
+Save it as "Open in agentsbox"; now right-click any folder → **Quick Actions** to open a Terminal there running `agentsbox enter`
