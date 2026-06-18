@@ -1,5 +1,5 @@
 ---
-name: send-to-agent
+name: agentsbox-ask-agent
 description: Use when the user asks to ask, query, consult, or get knowledge from ANOTHER project's or repo's agent (e.g. "ask the repo2 agent how it does X", "check with the api-service agent", "find out from the frontend agent"). Sends an A2A message to that agent and returns its answer.
 ---
 
