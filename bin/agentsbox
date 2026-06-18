@@ -36,6 +36,7 @@ Subcommands:
   ls             List running agent containers (-a stopped, --pretty boxes, --watch live)
   secrets add    Load a file as a podman secret for a project's agent shell
   secrets ls     List secrets mounted in a project's agent shell
+  secrets rm     Remove a secret from a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
@@ -74,6 +75,10 @@ Options for 'secrets add' (agentsbox secrets add <file> [options]):
 Options for 'secrets ls':
   --project DIR  Project to list secrets for (default: current directory)
   --global       List only global secrets (mounted in every project)
+
+Options for 'secrets rm' (agentsbox secrets rm <name> [options]):
+  --project DIR  Project the secret belongs to (default: current directory)
+  --global       Remove a global secret (mounted in every project)
 EOF
 }
 
@@ -254,20 +259,60 @@ cmd_load_secret() {
     fi
 }
 
+cmd_remove_secret() {
+    local name="" project="$PWD" project_set="" global=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) project="$2"; project_set=1; shift 2 ;;
+            --global)  global=1; shift ;;
+            -*)        echo "secrets rm: unknown option: $1" >&2; exit 1 ;;
+            *)         name="$1"; shift ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        echo "usage: agentsbox secrets rm <name> [--project DIR | --global]" >&2
+        exit 1
+    fi
+    if [[ -n "$global" && -n "$project_set" ]]; then
+        echo "secrets rm: --global and --project are mutually exclusive" >&2
+        exit 1
+    fi
+
+    local secret
+    if [[ -n "$global" ]]; then
+        secret="agent-global-$name"
+    else
+        [[ -d "$project" ]] || { echo "secrets rm: no such project dir: $project" >&2; exit 1; }
+        # Canonicalize to match the hash used by `secrets add` / `enter`.
+        project="$(cd "$project" && pwd)"
+        secret="agent-$(sha1_8 "$project")-$name"
+    fi
+
+    # podman secret rm fails loudly if the secret doesn't exist, which is the
+    # behavior we want (tells the user nothing matched the given name/scope).
+    podman secret rm "$secret" >/dev/null || {
+        echo "secrets rm: no such secret: $secret" >&2
+        exit 1
+    }
+    echo "Removed secret '$secret'"
+}
+
 cmd_list_secrets() {
     exec "$SCRIPT_DIR/bin/list-secrets" "$@"
 }
 
-# Group command: `agentsbox secrets <add|ls> [options]`.
+# Group command: `agentsbox secrets <add|ls|rm> [options]`.
 cmd_secrets() {
     local sub="${1:-}"
     [[ $# -gt 0 ]] && shift
     case "$sub" in
         add)            cmd_load_secret "$@" ;;
         ls)             cmd_list_secrets "$@" ;;
-        help|-h|--help) echo "Usage: agentsbox secrets <add|ls> [options]  (see 'agentsbox help')" ;;
-        "")             echo "usage: agentsbox secrets <add|ls> [options]" >&2; exit 1 ;;
-        *)              echo "secrets: unknown subcommand: $sub (expected add|ls)" >&2; exit 1 ;;
+        rm)             cmd_remove_secret "$@" ;;
+        help|-h|--help) echo "Usage: agentsbox secrets <add|ls|rm> [options]  (see 'agentsbox help')" ;;
+        "")             echo "usage: agentsbox secrets <add|ls|rm> [options]" >&2; exit 1 ;;
+        *)              echo "secrets: unknown subcommand: $sub (expected add|ls|rm)" >&2; exit 1 ;;
     esac
 }
 

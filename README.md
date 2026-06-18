@@ -38,6 +38,7 @@ Now you can run `agentsbox` from any project directory.
 | `agentsbox ls`                 | List running agent containers (pass `-a` for stopped too)                         |
 | `agentsbox secrets add <file>` | Load a file as a podman secret, mounted into a project's agent shell              |
 | `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
+| `agentsbox secrets rm <name>`  | Remove a secret from a project's agent shell                                      |
 | `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
 | `agentsbox update`             | Pull the latest base image and rebuild the container                              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |
@@ -65,11 +66,13 @@ agentsbox secrets add ~/.npmrc --target /root/.npmrc --global   # all projects
 ```
 
 If a project secret and a global one share a target, the project one wins.
-Inspect or remove them with plain podman:
+
+Remove a secret by the same name and scope you added it with:
 
 ```bash
-podman secret ls
-podman secret rm agent-<hash>-<name>
+agentsbox secrets rm .env                       # this project's .env secret
+agentsbox secrets rm key --project ~/src/other  # another project's secret
+agentsbox secrets rm .npmrc --global            # the global secret
 ```
 
 ---
