@@ -5,17 +5,13 @@ agentsbox
 
 Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
 
-Today's agents run commands, install packages, and act on web content autonomously — one bad instruction or compromised dependency shouldn't reach the rest of your machine.
-
 ```bash
 agentsbox enter
 ```
 
-Opens the current directory in a secure agent shell. Green border = sandboxed.
+Opens the current directory in a secure agent shell (green border = sandboxed). Agents come pre-installed; your existing config, skills, and MCPs carry over automatically.
 
-Supported agents come pre-installed — your existing config, skills, and MCPs carry over automatically.
-
-But of what use is an agent kept in the dark? agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
+Isolated doesn't mean limited. agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
 
 ---
 
