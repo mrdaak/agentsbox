@@ -148,7 +148,8 @@ cmd_enter() {
 
     # A2A answers with the same agent the session runs (claude/codex are wired
     # into the listener; anything else falls back to claude there).
-    local run_args=(run --workdir "$workdir" --a2a-agent "$launch_agent" --agent-name "$agent_name")
+    local run_args=(run --workdir "$workdir" --agent-name "$agent_name")
+    [[ -n "$launch_agent" ]] && run_args+=(--a2a-agent "$launch_agent")
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
     [[ -n "$launch_agent" && "$launch_agent" != "none" ]] && run_args+=(--agent "$launch_agent")
