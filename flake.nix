@@ -12,10 +12,8 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         runtimeDeps = [
-          pkgs.podman
           pkgs.nushell
           pkgs.jq
-          pkgs.perl
           pkgs.coreutils
         ];
 

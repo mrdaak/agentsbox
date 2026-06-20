@@ -29,7 +29,7 @@ def check-nix [] {
 
 def check-podman [] {
     if not (has-cmd "podman") {
-        return [(fail-check "Podman not installed" "Provided by 'nix develop' shell")]
+        return [(fail-check "Podman not installed" "https://podman.io/get-started")]
     }
 
     let v = (podman --version | str trim)
