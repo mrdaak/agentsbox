@@ -4,9 +4,9 @@ FROM ghcr.io/nixos/nix:2.34.7@sha256:bf1d938835ab96312f098fa6c2e9cab367728e0aad0
 RUN printf 'experimental-features = nix-command flakes\nbuild-users-group =\n' >> /etc/nix/nix.conf
 
 # Install all dev tools via nix in a single profile generation. packages.nix is
-# the source of truth for the tool set; it imports the version-pinned claude-code.nix and codex.nix.
+# the source of truth for the tool set; it imports the version-pinned claude-code.nix, codex.nix, and pi.nix.
 # --priority resolves collisions against packages already present in the base image's profile.
-COPY packages.nix claude-code.nix codex.nix /tmp/nix/
+COPY packages.nix claude-code.nix codex.nix pi.nix /tmp/nix/
 RUN nix profile add --priority 4 -f /tmp/nix/packages.nix
 
 # Set up XDG directories for proper config loading

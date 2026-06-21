@@ -134,7 +134,7 @@ export def "main run" [
     let container = $"agent-($workdir | path basename)-($hash)"
 
     # Host config dirs the bind mounts expect to exist.
-    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills" $"($home)/.pi/agent/"
+    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills" $"($home)/.pi/agent"
     touch $"($home)/.claude.json"
 
     mut run_args = [
@@ -187,6 +187,7 @@ export def "main run" [
         -v $"($home)/.codex:/root/.codex:Z"
         -v $"($home)/.config/codex:/root/.config/codex:Z"
         -v $"($home)/.local/share/codex:/root/.local/share/codex:Z"
+        -v $"($home)/.pi/agent:/root/.pi/agent:Z"
         -v $"($workdir):/workspace:Z"
     ])
     $run_args = ($run_args | append (secret-flags $hash))
