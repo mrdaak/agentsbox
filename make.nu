@@ -134,7 +134,7 @@ export def "main run" [
     let container = $"agent-($workdir | path basename)-($hash)"
 
     # Host config dirs the bind mounts expect to exist.
-    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills"
+    mkdir $"($home)/.opencode/config" $"($home)/.opencode/data" $"($home)/.claude" $"($home)/.codex" $"($home)/.config/codex" $"($home)/.local/share/codex" $"($home)/.agents/skills" $"($home)/.pi/agent/"
     touch $"($home)/.claude.json"
 
     mut run_args = [

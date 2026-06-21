@@ -10,6 +10,7 @@ url = "https://github.com/NixOS/nixpkgs/archive/nixos-26.05.tar.gz";
 let
   claude-code = (import ./claude-code.nix { inherit pkgs; }).claude-code;
   codex = (import ./codex.nix { inherit pkgs; }).codex;
+  pi-coding-agent = (import ./pi.nix { inherit pkgs; }).pi-coding-agent;
 in
 pkgs.buildEnv {
   name = "agents-tools";
@@ -36,6 +37,7 @@ pkgs.buildEnv {
   ]) ++ [
     claude-code
     codex
+    pi-coding-agent
   ];
 
   # Tolerate file overlap between packages within this set (e.g. multiple
