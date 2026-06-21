@@ -35,6 +35,7 @@ Now you can run `agentsbox` from any project directory.
 | `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
 | `agentsbox secrets rm <name>`  | Remove a secret from a project's agent shell                                      |
 | `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
+| `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`              |
 | `agentsbox update`             | Pull the latest base image and rebuild the container                              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |
 | `agentsbox help`               | Show usage                                                                        |

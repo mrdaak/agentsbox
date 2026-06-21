@@ -38,9 +38,16 @@ Subcommands:
   secrets ls     List secrets mounted in a project's agent shell
   secrets rm     Remove a secret from a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
+  config         Set a config value in .agentsbox/config.toml (--global for ~/.config)
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
   help           Show this message
+
+Options for 'config' (agentsbox config <field> <value> [options]):
+  --global       Edit ~/.config/agentsbox.toml instead of the current project's
+                 .agentsbox/config.toml (applies to every project)
+  Currently only the 'agent' field is supported (e.g. claude, codex, opencode, pi,
+  or 'none' for a plain shell).
 
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
@@ -64,6 +71,8 @@ Options for 'enter':
   so 'agentsbox enter' opens it without running 'claude' by hand. A project
   may override it for itself with .agentsbox/config.toml:
       agent = "codex"
+  Use 'agentsbox config agent <name>' to write either file (add --global for
+  the per-user default).
 
   A project may ship .agentsbox/listen (a custom A2A server — you'll be asked
   to serve it over A2A) and .agentsbox/config.toml (AGENT_NAME default;
@@ -359,6 +368,64 @@ cmd_install_skills() {
     echo "Done. Start a fresh sandbox session to pick them up."
 }
 
+# Write a single string key into a TOML file, creating the file (and its parent
+# dir) if missing. nushell parses (never sources) the TOML, round-trips it with
+# `to toml`, and preserves any other keys already present. Value is passed via
+# env to avoid quoting issues.
+set_toml_key() {
+    local file="$1" key="$2" value="$3"
+    mkdir -p "$(dirname "$file")"
+    CFG_FILE="$file" CFG_KEY="$key" CFG_VAL="$value" nu -c \
+        'if ($env.CFG_FILE | path exists) { open $env.CFG_FILE } else { {} }
+            | upsert $env.CFG_KEY $env.CFG_VAL
+            | to toml
+            | save -f $env.CFG_FILE'
+}
+
+cmd_config() {
+    local field="" value="" global=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --global)  global=1; shift ;;
+            -*)        echo "config: unknown option: $1" >&2; exit 1 ;;
+            *)         if [[ -z "$field" ]]; then field="$1"; shift
+                       elif [[ -z "$value" ]]; then value="$1"; shift
+                       else echo "config: unexpected argument: $1" >&2; exit 1; fi ;;
+        esac
+    done
+
+    if [[ -z "$field" || -z "$value" ]]; then
+        echo "usage: agentsbox config <field> <value> [--global]" >&2
+        echo "  currently supported fields: agent" >&2
+        exit 1
+    fi
+    if [[ "$field" != "agent" ]]; then
+        echo "config: unsupported field '$field' (first version supports only 'agent')" >&2
+        exit 1
+    fi
+    # Same constraint `enter` enforces on the agent it launches: a bare command
+    # name, or the literal 'none' to force a plain shell.
+    if [[ "$value" != "none" && ! "$value" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        echo "config: invalid agent '$value' (expected a bare command name, e.g. claude, codex, opencode, pi, or 'none')" >&2
+        exit 1
+    fi
+
+    local file
+    if [[ -n "$global" ]]; then
+        file="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+    else
+        file="$PWD/.agentsbox/config.toml"
+    fi
+
+    set_toml_key "$file" "$field" "$value"
+
+    if [[ -n "$global" ]]; then
+        echo "Set $field = \"$value\" in $file (applies to every project)"
+    else
+        echo "Set $field = \"$value\" in $file"
+    fi
+}
+
 cmd_update() {
     exec nu "$SCRIPT_DIR/make.nu" update
 }
@@ -378,6 +445,7 @@ case "$1" in
     ls)             shift; cmd_list "$@" ;;
     secrets)        shift; cmd_secrets "$@" ;;
     install-skills) shift; cmd_install_skills "$@" ;;
+    config)         shift; cmd_config "$@" ;;
     update)         shift; cmd_update ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;
