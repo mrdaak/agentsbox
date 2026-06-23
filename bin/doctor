@@ -70,11 +70,14 @@ def check-podman [] {
 }
 
 def check-image [] {
-    let r = (do { podman image exists ai-agent:latest } | complete)
+    # The version is threaded from flake.nix via AGENTSBOX_VERSION (see make.nu's
+    # image-tag); fall back to `latest` when run outside the wrapper/dev shell.
+    let tag = ($env.AGENTSBOX_VERSION? | default "latest")
+    let r = (do { podman image exists $"agentsbox:($tag)" } | complete)
     if $r.exit_code == 0 {
-        [(pass "Image ai-agent:latest built")]
+        [(pass $"Image agentsbox:($tag) built")]
     } else {
-        [(warn-check "Image ai-agent:latest missing" "agentsbox update")]
+        [(warn-check $"Image agentsbox:($tag) missing" "agentsbox update")]
     }
 }
 

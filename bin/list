@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # Lists running agent containers — those named agent-<dir>-<hash> from the
-# ai-agent image (see make.nu). Filters on that name prefix; pass --all to
+# agentsbox image (see make.nu). Filters on that name prefix; pass --all to
 # include stopped containers too. Renders podman's output through nushell so
 # it comes back as a structured table you can pipe and filter, or as boxes
 # with --pretty. A2A-enabled agents (those joined to the agentsbox-net bus)

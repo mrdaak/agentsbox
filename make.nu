@@ -10,9 +10,20 @@
 # Run from the repo root via $env.AGENTS_TOOLS_DIR (set by flake.nix in both the
 # package wrapper and the dev shell), matching the Makefile's ROOT_PATH.
 
-const IMAGE_NAME = "ai-agent"
+const IMAGE_NAME = "agentsbox"
 const NIX_VOLUME = "agent-nix-store"
 const PNPM_VOLUME = "agent-pnpm-store"
+
+# Image tag. The version is the single source of truth in flake.nix
+# (packages.agentsbox.version), threaded here through the `AGENTSBOX_VERSION`
+# env var set by the flake wrapper (makeWrapper) and the dev-shell shellHook.
+# Falls back to "latest" for a raw `nu make.nu` invocation outside either. The
+# versioned tag pins the running image to the installed agentsbox version; the
+# `latest` tag is a convenience alias. Both are written on build/update so the
+# previous version's tag survives a failed rebuild as a rollback target.
+def image-tag [] {
+    $env.AGENTSBOX_VERSION? | default "latest"
+}
 
 # Repo root — source of truth for the Containerfile and zellij-config.kdl.
 def root [] {
@@ -73,7 +84,7 @@ def build-image [] {
         cd (root)
         print "Building sandbox environment…"
         (
-            podman build -t $"($IMAGE_NAME):latest" .
+            podman build -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
             out+err>| tee { save --force --raw $log }
             | lines
             | each {|line|
@@ -100,7 +111,7 @@ export def "main build" [] {
 ## Force rebuild without cache and refresh the runtime Nix store
 export def "main update" [] {
     cd (root)
-    podman build --no-cache -t $"($IMAGE_NAME):latest" .
+    podman build --no-cache -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
     do -i { podman volume rm $NIX_VOLUME }
 }
 
@@ -191,7 +202,7 @@ export def "main run" [
         -v $"($workdir):/workspace:Z"
     ])
     $run_args = ($run_args | append (secret-flags $hash))
-    $run_args = ($run_args | append $"($IMAGE_NAME):latest")
+    $run_args = ($run_args | append $"($IMAGE_NAME):(image-tag)")
 
     podman run ...$run_args
 }

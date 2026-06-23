@@ -11,6 +11,11 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
+        # Single source of truth for the agentsbox version — consumed by the
+        # wrapper (AGENTSBOX_VERSION) and the dev-shell shellHook, and threaded
+        # into make.nu's image-tag for versioned podman image tags.
+        version = "0.1.10";
+
         runtimeDeps = [
           pkgs.nushell
           pkgs.jq
@@ -19,7 +24,7 @@
 
         agentsbox = pkgs.stdenv.mkDerivation {
           pname = "agentsbox";
-          version = "0.1.10";
+          inherit version;
           src = ./.;
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -45,6 +50,7 @@
 
             makeWrapper $out/share/agents/bin/agentsbox $out/bin/agentsbox \
               --set AGENTS_TOOLS_DIR $out/share/agents \
+              --set AGENTSBOX_VERSION ${version} \
               --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
 
             runHook postInstall
@@ -64,6 +70,7 @@
 
           shellHook = ''
             export AGENTS_TOOLS_DIR=$(pwd)
+            export AGENTSBOX_VERSION=${version}
             export PATH="$AGENTS_TOOLS_DIR/bin:$PATH"
           '';
         };
