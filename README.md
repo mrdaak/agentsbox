@@ -1,5 +1,3 @@
-%title: agentsbox - Agent sandbox shell
-
 agentsbox
 ==================
 
@@ -20,7 +18,7 @@ Isolated doesn't mean limited. agentsbox can hand agents the [secrets](#secrets)
 - [Nix](https://nixos.org/download/) package manager
 
 ```bash
-nix profile add github:mrdakdev/agentsbox
+nix profile install github:mrdaak/agentsbox
 ```
 
 Now you can run `agentsbox` from any project directory.
@@ -81,19 +79,6 @@ to load so you get the exact/reproducible developer toolchain (no "works on my m
 ```bash
 Detected flake.nix. Load nix environment? [Y/n]:
 ```
-
----
-
-## Work on two features at once
-
-Use **git worktrees** and hack on parallel features side by side, each on its own branch:
-
-```bash
-# inside the sandbox
-git worktree add ../wt1            # new branch + dir at /wt1
-```
-
-Done? `git merge wt1` and `git worktree remove wt1`.
 
 ---
 
