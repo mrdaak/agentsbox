@@ -114,6 +114,23 @@ nu make.nu doctor
 There are no linting or formatting tools configured in this repository. Follow the
 conventions below when editing scripts or `make.nu` subcommands.
 
+### Commenting
+
+Comments are for the **why**, not the **what**. Apply this everywhere (Bash,
+nushell, Node, TOML):
+
+- One header comment immediately after the shebang: a single line stating what
+  the file does — not how. Wrap to a second line only if essential, then stop.
+- Inline `#` notes explain **non-obvious** behavior only: a subtle ordering
+  dependency, a cross-file invariant that must hold (e.g. the project-hash
+  parity across `make.nu` / `bin/agentsbox` / `bin/list-secrets`), or a guard
+  against a footgun. If the code reads itself, leave it alone.
+- Never restate the code (`# create the dir` above `mkdir -p`), never narrate a
+  block step-by-step, and never leave commented-out code.
+- Keep notes terse — one line, declarative. `scripts/smoke-volumes.sh` is the
+  reference example: a one-line header, and only the hash-parity line and the
+  stub's purpose are annotated.
+
 ---
 
 ## Code Style Guidelines
@@ -136,8 +153,8 @@ conventions below when editing scripts or `make.nu` subcommands.
   to another process.
 - **Single responsibility:** `bin/agentsbox` dispatches and delegates; heavy
   logic lives in `make.nu` or the dedicated bin scripts.
-- **Comments:** one-line header comment immediately after the shebang explaining
-  purpose; inline `#` comments for non-obvious behavior.
+- **Comments:** follow the repo-wide **Commenting** rules above (header line
+  states *what*; inline `#` notes explain non-obvious *why* only).
 - **Graceful fallback pattern** (entrypoint):
   ```bash
   some-command "$@" || {
@@ -145,6 +162,18 @@ conventions below when editing scripts or `make.nu` subcommands.
       fallback-command "$@"
   }
   ```
+- **`nu -c` helpers (TOML reads):** the established pattern (`config_value`,
+  `config_volumes`) invokes `nu -c '...'` from a Bash function to *parse*
+  `.agentsbox/config.toml` (never source it — a cloned repo must not run code at
+  `enter` time), with `2>/dev/null || true` so a missing file/key yields empty
+  output. That suppression **also hides real parse errors in a new expression**
+  (a broken `nu -c` exits 0 empty and looks like a missing-key case). So when
+  writing or changing such a helper, **run the nushell expression bare first**
+  (`nu -c '<expr>'` against a real TOML file) and confirm it prints the right
+  thing *before* wrapping it in the Bash function with the suppression. Keep the
+  expression quote-light and minimal; if it needs conditionals/`each`/`default`
+  together it has outgrown an inline `nu -c` — move it to an exported `def` in
+  `make.nu` instead.
 
 ### make.nu (nushell)
 
@@ -166,8 +195,17 @@ conventions below when editing scripts or `make.nu` subcommands.
   message/exit (see `build-image`).
 - **Eager `default`:** `default (expr)` evaluates `expr` unconditionally; use an
   `if` when the fallback has side effects.
-- **Comments:** use `##` prefix on the line above a subcommand for
-  self-documentation; plain `#` for implementation notes.
+- **List-typed flags take a single `[a, b]` value, not repeated flags:** a
+  `--foo: list<string>` param cannot be fed with `--foo a --foo b` (nushell
+  raises `expected list`); it wants `--foo "[a,b]"`. When `bin/agentsbox` (Bash)
+  needs to pass a variable-length list into `make.nu`, prefer an **env var**
+  (one entry per line) over a list-typed flag — see `AGENTSBOX_VOLUMES`, which
+  `volume-flags` reads via `$env.AGENTSBOX_VOLUMES? | default "" | lines`. This
+  matches how the codebase already moves state into `make.nu` (`AGENT_NAME`,
+  `A2A_AGENT`, …).
+- **Comments:** `##` prefix on the line above a subcommand for
+  self-documentation; plain `#` for implementation notes. Otherwise follow the
+  repo-wide **Commenting** rules (why, not what).
 - **Security:** always pass `--security-opt no-new-privileges:true` to
   `podman run`.
 - **Ephemeral containers:** always include `--rm` in `podman run` invocations.
@@ -260,10 +298,33 @@ When modifying the `run` subcommand in `make.nu`, preserve these bind mounts:
 | `~/.config/codex`        | `/root/.config/codex`        | Codex config                     |
 | `~/.local/share/codex`   | `/root/.local/share/codex`   | Codex data                       |
 | podman secrets           | `agents.target` label path    | Project/global credential files  |
+| `agent-<hash>-<name>` volume | `[[volumes]].target`        | Project-declared persistent volume (see below) |
 
 Always create host-side directories with `mkdir -p` before mounting them
 (`make.nu run` does this). Use `:Z` on SELinux-aware systems for all bind
 mounts.
+
+### Project-declared volumes
+
+A project may declare persistent named volumes in `.agentsbox/config.toml` via a
+`[[volumes]]` array-of-tables (two fields: `name`, `target`). On `agentsbox enter`
+agentsbox creates each volume (namespaced `agent-<hash>-<name>`, matching the
+secret convention) and mounts it at `target` with `:Z`. The config is *parsed*
+(never sourced), so a cloned repo can't run code at `enter` time.
+
+```toml
+[[volumes]]
+name   = "go-cache"
+target = "/root/go"
+```
+
+`name` must match `^[A-Za-z0-9_.-]+$`; `target` must be absolute and must not
+collide with a built-in mount (`/workspace`, `/nix`, `/root/.claude`, …). Malformed
+entries are hard errors. Validation, namespacing, and `podman volume create` happen
+in `make.nu`'s `volume-flags` helper; the `[[volumes]]` array is read in
+`bin/agentsbox` (`config_volumes`) and transported to `make.nu` via the
+`AGENTSBOX_VOLUMES` env var (one `name:target` per line), since nushell list flags
+don't accept repeated values.
 
 ---
 
@@ -273,6 +334,7 @@ mounts.
 | --------------------- | --------------------------------- | ---------------------------------------------------- |
 | `AGENTS_TOOLS_DIR`    | `flake.nix` (wrapper + shellHook) | Absolute path to installed share/agents; used by `make.nu` |
 | `AGENTSBOX_VERSION`   | `flake.nix` (wrapper + shellHook) | agentsbox version — pins the podman image tag (`agentsbox:<version>`) |
+| `AGENTSBOX_VOLUMES`   | `bin/agentsbox` (`enter`)         | Project-declared `[[volumes]]` (one `name:target` per line); read by `make.nu` |
 | `XDG_CONFIG_HOME`     | Containerfile + `make.nu` `-e`    | `/root/.config`                                      |
 | `XDG_DATA_HOME`       | Containerfile + `make.nu` `-e`    | `/root/.local/share`                                 |
 | `OPENCODE_CONFIG_DIR` | Containerfile + `make.nu` `-e`    | `/root/.config/opencode`                             |

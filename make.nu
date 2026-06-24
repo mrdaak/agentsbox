@@ -1,26 +1,16 @@
 #!/usr/bin/env nu
-# make.nu — orchestration for agentsbox (build / run / update / shell / clean / doctor).
-#
-# Behavior-for-behavior port of the former Makefile. agentsbox no longer uses
-# make as a build system (every target was .PHONY and podman does the layer
-# caching), so this is a task runner — the same role toolkit.nu plays in the
-# nushell repo. Invoked as `nu make.nu <subcommand> [flags]`; bin/agentsbox is
-# the caller.
-#
-# Run from the repo root via $env.AGENTS_TOOLS_DIR (set by flake.nix in both the
-# package wrapper and the dev shell), matching the Makefile's ROOT_PATH.
+# make.nu — task runner for agentsbox (build / run / update / shell / clean / doctor).
+# Invoked by bin/agentsbox as `nu make.nu <subcommand> [flags]`; resolves the repo
+# root via $env.AGENTS_TOOLS_DIR (set by flake.nix).
 
 const IMAGE_NAME = "agentsbox"
 const NIX_VOLUME = "agent-nix-store"
 const PNPM_VOLUME = "agent-pnpm-store"
 
-# Image tag. The version is the single source of truth in flake.nix
-# (packages.agentsbox.version), threaded here through the `AGENTSBOX_VERSION`
-# env var set by the flake wrapper (makeWrapper) and the dev-shell shellHook.
-# Falls back to "latest" for a raw `nu make.nu` invocation outside either. The
-# versioned tag pins the running image to the installed agentsbox version; the
-# `latest` tag is a convenience alias. Both are written on build/update so the
-# previous version's tag survives a failed rebuild as a rollback target.
+# Image tag: AGENTSBOX_VERSION (set by flake.nix), falling back to "latest" for a
+# raw `nu make.nu` call. The versioned tag pins the running image to the installed
+# agentsbox; build/update write both it and `latest` so a failed rebuild leaves the
+# previous version's tag as a rollback target.
 def image-tag [] {
     $env.AGENTSBOX_VERSION? | default "latest"
 }
@@ -38,21 +28,19 @@ def build-log [] {
     $env.BUILD_LOG? | default "/tmp/agentsbox-build.log"
 }
 
-# First 8 hex of the SHA-1 of the workdir path. nushell has no `hash sha1`
-# (only md5/sha256), so shell out to sha1sum — and crucially pipe the string
-# WITHOUT a trailing newline, matching bin/agentsbox's `printf '%s' | shasum`
-# and bin/list-secrets. The container name and secret prefixes depend on this
-# lining up exactly, so do not change the hashing without re-verifying.
+# SHA-1 of the workdir path, first 8 hex. nushell has no `hash sha1`, so shell out
+# to sha1sum — and pipe WITHOUT a trailing newline, matching bin/agentsbox's sha1_8
+# and bin/list-secrets. The container name and secret/volume prefixes depend on
+# this lining up exactly; do not change without re-verifying all three.
 def workdir-hash [workdir: string] {
     $workdir | ^sha1sum | split row " " | first | str substring 0..<8
 }
 
-# The --secret flags for `podman run`, mirroring the Makefile's SECRET_FLAGS.
-# `podman secret ls` has no label filter, so match by name prefix: project
-# secrets (agent-<hash>-) first, then globals (agent-global-). The mount target
-# lives in the agents.target label. Secrets with no target are skipped; on a
-# shared target the first wins (project beats global) because uniq-by keeps the
-# first occurrence — podman rejects two mounts at one path.
+# --secret flags for `podman run`. `podman secret ls` has no label filter, so match
+# by name prefix: project secrets (agent-<hash>-) first, then globals
+# (agent-global-). The mount target lives in the agents.target label. On a shared
+# target the first wins (project beats global) — uniq-by keeps the first, and
+# podman rejects two mounts at one path.
 def secret-flags [hash: string] {
     let all = (do -i { podman secret ls --format '{{.Name}}' } | default "" | lines)
     let names = (
@@ -73,11 +61,58 @@ def secret-flags [hash: string] {
     | flatten
 }
 
-# Build the image. Full output still goes to the build log (via tee), but the
-# `STEP x/y` lines podman emits are surfaced as a single in-place progress line
-# so `enter` isn't a silent wait. On failure print the log location to stderr
-# and exit non-zero. A failed external aborts the script in nushell, so the
-# try/catch is what turns that into the Makefile's behavior.
+# In-container paths already bound by built-in mounts (run_args) and secrets —
+# a project-declared volume may not reuse one, since podman rejects two mounts
+# at the same path and we want to fail with a clear message rather than podman's.
+def built-in-mounts [] {
+    [ /workspace /nix /pnpm-store
+      /root/.agents /root/.claude /root/.claude.json
+      /root/.codex /root/.config/codex /root/.local/share/codex
+      /root/.pi/agent /root/.config/opencode /root/.local/share/opencode ]
+}
+
+# -v flags for project-declared [[volumes]] (each entry "name:target"). Namespaced
+# agent-<hash>-<name> (like secrets) so projects can't collide, created lazily so a
+# fresh checkout just works on first `enter`, mounted with :Z for SELinux. Name
+# shape, absolute target, and collisions with built-in mounts are hard errors — a
+# typo shouldn't silently drop a mount the user expects.
+def volume-flags [hash: string, entries: list] {
+    if ($entries | is-empty) { return [] }
+    let existing = (do -i { podman volume ls --format '{{.Name}}' } | default "" | lines)
+    let mounts = (built-in-mounts)
+    $entries
+    | each {|entry|
+        let parts = ($entry | split row ":")
+        if ($parts | length) != 2 {
+            error make {msg: $"agentsbox: malformed volume '($entry)' (expected name:target)"}
+        }
+        let name = ($parts | first)
+        let target = ($parts | last)
+        if ($name | is-empty) {
+            error make {msg: $"agentsbox: volume entry '($entry)' has an empty name"}
+        }
+        if not ($name =~ '^[A-Za-z0-9_.-]+$') {
+            error make {msg: $"agentsbox: invalid volume name '($name)' (allowed: A-Z a-z 0-9 _ . -)"}
+        }
+        if ($target | is-empty) or not ($target | str starts-with "/") {
+            error make {msg: $"agentsbox: volume target '($target)' must be an absolute path"}
+        }
+        if ($target in $mounts) {
+            error make {msg: $"agentsbox: volume target '($target)' collides with a built-in mount"}
+        }
+        let effective = $"agent-($hash)-($name)"
+        if ($effective not-in $existing) {
+            podman volume create $effective out+err>| ignore
+        }
+        ["-v" $"($effective):($target):Z"]
+    }
+    | flatten
+}
+
+# Build the image. Full output goes to the build log (via tee), but the `STEP x/y`
+# lines are surfaced as a single in-place progress line so `enter` isn't a silent
+# wait. On failure, print the log location and exit non-zero — the try/catch turns
+# a nushell external abort into that (an uncaught abort would kill the script).
 def build-image [] {
     let log = (build-log)
     try {
@@ -166,15 +201,13 @@ export def "main run" [
         $run_args = ($run_args | append ["-p" "1455:1455"])
     }
     if $web {
-        # Zellij's web client binds the container loopback; a socat relay in the
-        # entrypoint bridges the container's external interface to it. podman's
-        # bridge network DNATs a published port to the container's interface IP,
-        # not its loopback, so without the relay a loopback-only server is
-        # unreachable (the connect resets: ERR_EMPTY_RESPONSE). Publish the
-        # relay's port (8082) to the chosen host slot, bound to --web-bind.
-        # WEB_HOST/WEB_PORT tell the entrypoint what to print in the access URL:
-        # the bind address, except 0.0.0.0 isn't a connect target so show
-        # loopback (other devices substitute the host's reachable IP).
+        # Zellij's web client binds the container loopback, but podman's bridge DNATs
+        # a published port to the container's interface IP (not loopback), so an
+        # entrypoint socat relay bridges the two — without it the connect resets
+        # (ERR_EMPTY_RESPONSE). Publish the relay's port (8082) to the host slot;
+        # WEB_HOST/WEB_PORT tell the entrypoint the access URL to print (0.0.0.0 isn't
+        # a connect target, so show loopback there — other devices substitute the
+        # host's reachable IP).
         let url_host = (if $web_bind == "0.0.0.0" { "127.0.0.1" } else { $web_bind })
         $run_args = ($run_args | append ["-p" $"($web_bind):($web_port):8082" "-e" "WEB_ENABLED=1" "-e" $"WEB_PORT=($web_port)" "-e" $"WEB_HOST=($url_host)"])
     }
@@ -202,6 +235,11 @@ export def "main run" [
         -v $"($workdir):/workspace:Z"
     ])
     $run_args = ($run_args | append (secret-flags $hash))
+    # [[volumes]] arrive via AGENTSBOX_VOLUMES (one `name:target` per line) from
+    # bin/agentsbox — nushell list flags don't accept repeated values, so an env
+    # var is the transport.
+    let vol_entries = ($env.AGENTSBOX_VOLUMES? | default "" | lines | where $it != "")
+    $run_args = ($run_args | append (volume-flags $hash $vol_entries))
     $run_args = ($run_args | append $"($IMAGE_NAME):(image-tag)")
 
     podman run ...$run_args

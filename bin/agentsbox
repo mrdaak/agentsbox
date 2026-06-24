@@ -15,15 +15,25 @@ sha1_8() {
     fi
 }
 
-# Read a single key from a project's .agentsbox/config.toml. nushell PARSES the
-# TOML (it never sources/executes it), so a project's config can't run code at
-# `enter` time. Prints the value (or nothing if the file/key is absent or the
-# file is malformed). File and key are passed via env to avoid quoting issues.
+# Read a single key from .agentsbox/config.toml. nushell PARSES the TOML (never
+# sources it), so a project's config can't run code at `enter` time. File and key
+# are passed via env to avoid quoting issues.
 config_value() {
     local file="$1" key="$2"
     [[ -f "$file" ]] || return 0
     CFG_FILE="$file" CFG_KEY="$key" nu -c \
         'try { open $env.CFG_FILE | get $env.CFG_KEY | into string } catch { "" }' \
+        2>/dev/null || true
+}
+
+# Read the [[volumes]] array from .agentsbox/config.toml, emit one `name<TAB>target`
+# line per entry (parses, never sources). Validation and agent-<hash>-<name>
+# namespacing happen in make.nu, where the project hash lives.
+config_volumes() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" nu -c \
+        'try { open $env.CFG_FILE | get volumes? | default [] | each { |v| $"($v.name? | default "")\t($v.target? | default "")" } | to text } catch { "" }' \
         2>/dev/null || true
 }
 
@@ -78,6 +88,14 @@ Options for 'enter':
   to serve it over A2A) and .agentsbox/config.toml (AGENT_NAME default;
   CLI flags override).
 
+  A project may also declare persistent named volumes in .agentsbox/config.toml
+  via a [[volumes]] array-of-tables (fields: name, target). On enter each is
+  created if missing (as agent-<hash>-<name>) and mounted at target with :Z:
+
+      [[volumes]]
+      name   = "go-cache"
+      target = "/root/go"
+
 Options for 'secrets add' (agentsbox secrets add <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
@@ -116,22 +134,23 @@ cmd_enter() {
     [[ -d "$workdir" ]] || { echo "enter: no such directory: $workdir" >&2; exit 1; }
     workdir="$(cd "$workdir" && pwd)"
 
-    # Project-declared defaults from .agentsbox/config.toml. CLI flags win;
-    # config fills only what the flags left unset (precedence: flag > config >
-    # built-in default). Config sets identity (AGENT_NAME) and the auto-launch
-    # agent (see `agent` below), never whether to serve A2A — that stays the
-    # user's explicit choice below.
+    # Precedence: CLI flag > .agentsbox/config.toml > built-in default. Config sets
+    # identity (AGENT_NAME) and the auto-launch agent, never whether to serve A2A
+    # — that stays the user's explicit choice.
     local config="$workdir/.agentsbox/config.toml"
+    # Declared [[volumes]] (name<TAB>target per line); validated and mounted by
+    # make.nu, which namespaces them as agent-<hash>-<name>.
+    local volumes=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
+        volumes="$(config_volumes "$config")"
     fi
 
     # Final fallback: alias = project dir basename.
     [[ -n "$agent_name" ]] || agent_name="$(basename "$workdir")"
 
-    # Agent to auto-launch in the session. Precedence: --agent > project's
-    # .agentsbox/config.toml `agent` > global agentsbox.toml `agent`.
-    # "none"/unset keeps the old plain-shell behavior. config_value parses (never runs) the TOML.
+    # Precedence: --agent > project config `agent` > global agentsbox.toml `agent`.
+    # "none"/unset keeps the plain-shell behavior.
     local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
     if [[ -z "$launch_agent_set" ]]; then
         if [[ -f "$config" ]]; then
@@ -172,13 +191,21 @@ cmd_enter() {
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
     [[ -n "$launch_agent" && "$launch_agent" != "none" ]] && run_args+=(--agent "$launch_agent")
+    # Pass [[volumes]] to make.nu via AGENTSBOX_VOLUMES (one `name:target` per line) —
+    # nushell list flags don't accept repeated values, so an env var is the transport.
+    local agentsbox_volumes=""
+    if [[ -n "$volumes" ]]; then
+        while IFS=$'\t' read -r vname vtarget; do
+            [[ -n "$vname" && -n "$vtarget" ]] || { echo "enter: malformed volume in .agentsbox/config.toml (expected name + target)" >&2; exit 1; }
+            agentsbox_volumes+="${vname}:${vtarget}"$'\n'
+        done <<< "$volumes"
+    fi
+    export AGENTSBOX_VOLUMES="$agentsbox_volumes"
 
-    # --web exposes Zellij's web client (https://zellij.dev/documentation/web-client.html).
-    # It listens on 8082 inside the container; on the host we map it to
-    # <index>8082 so several agents never collide on one port: agent 1 -> 18082,
-    # agent 2 -> 28082, etc. The index is this agent's slot in `agentsbox ls` —
-    # the lowest 1-based slot not already taken by a running agent's web port
-    # (so a stopped agent's slot gets reused rather than skipped).
+    # --web exposes Zellij's web client (listens on 8082 in-container). Map it to host
+    # port <index>8082 (agent 1 -> 18082, agent 2 -> 28082, …) so concurrent agents
+    # don't collide; <index> is the lowest 1-based slot free in `agentsbox ls`, so a
+    # stopped agent's slot is reused.
     if [[ -n "$web" ]]; then
         local used index web_port
         used="$(podman ps --filter "name=^agent-" --format '{{.Ports}}' 2>/dev/null \
@@ -190,11 +217,9 @@ cmd_enter() {
             web_port=$((index * 10000 + 8082))
         done
 
-        # Host bind address for the published port. Default loopback keeps the
-        # session host-only; 'all' (0.0.0.0) and 'tailscale' (the host's tailnet
-        # IP) widen it so other devices — e.g. a phone on the same tailnet — can
-        # reach it. zellij's one-time token still gates access. An explicit value
-        # is passed through as-is.
+        # Host bind address for the published port. Default loopback is host-only;
+        # 'all' (0.0.0.0) and 'tailscale' widen it so other devices (e.g. a phone on
+        # the tailnet) can reach it — zellij's one-time token still gates access.
         local bind_addr
         case "${web_bind:-loopback}" in
             loopback|"") bind_addr=127.0.0.1 ;;
@@ -337,12 +362,10 @@ cmd_secrets() {
 }
 
 cmd_install_skills() {
-    # Skills bundled with agentsbox live in <repo>/skills/<name>/SKILL.md. The
-    # shared store is ~/.agents/skills (mounted into every sandbox); Claude Code
-    # discovers a skill via a relative symlink in ~/.claude/skills that points
-    # back into that store. This mirrors how `find-skills` installs itself, and
-    # the relative symlink resolves the same on the host and in the container
-    # (both dirs are siblings under home).
+    # Skills live in <repo>/skills/<name>/SKILL.md; the shared store ~/.agents/skills
+    # is mounted into every sandbox. Claude Code discovers a skill via a relative
+    # symlink in ~/.claude/skills pointing back into the store — relative so it
+    # resolves the same on the host and in the container (sibling dirs under home).
     local src="$SCRIPT_DIR/skills"
     local store="$HOME/.agents/skills"
     local claude_dir="$HOME/.claude/skills"
@@ -368,10 +391,9 @@ cmd_install_skills() {
     echo "Done. Start a fresh sandbox session to pick them up."
 }
 
-# Write a single string key into a TOML file, creating the file (and its parent
-# dir) if missing. nushell parses (never sources) the TOML, round-trips it with
-# `to toml`, and preserves any other keys already present. Value is passed via
-# env to avoid quoting issues.
+# Write a single string key into a TOML file (creating it if missing). nushell
+# parses (never sources) the TOML and round-trips it with `to toml`, preserving
+# other keys. Value is passed via env to avoid quoting issues.
 set_toml_key() {
     local file="$1" key="$2" value="$3"
     mkdir -p "$(dirname "$file")"
