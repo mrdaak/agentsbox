@@ -109,11 +109,21 @@ def volume-flags [hash: string, entries: list] {
     | flatten
 }
 
+# Confirm podman is on PATH before reaching `podman build`, which would otherwise
+# abort with only an (empty) build-log pointer. Direct `nu make.nu` invocations
+# bypass bin/agentsbox's own require_podman guard, so this is the last line of defense.
+def require-podman [] {
+    if (which podman | is-empty) {
+        error make {msg: "agentsbox: podman is required but was not found on your PATH.\n  Install Podman: https://podman.io/docs/installation\n  Then run: agentsbox doctor"}
+    }
+}
+
 # Build the image. Full output goes to the build log (via tee), but the `STEP x/y`
 # lines are surfaced as a single in-place progress line so `enter` isn't a silent
 # wait. On failure, print the log location and exit non-zero — the try/catch turns
 # a nushell external abort into that (an uncaught abort would kill the script).
 def build-image [] {
+    require-podman
     let log = (build-log)
     try {
         cd (root)
@@ -145,6 +155,7 @@ export def "main build" [] {
 
 ## Force rebuild without cache and refresh the runtime Nix store
 export def "main update" [] {
+    require-podman
     cd (root)
     podman build --no-cache -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
     do -i { podman volume rm $NIX_VOLUME }

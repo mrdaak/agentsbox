@@ -15,6 +15,21 @@ sha1_8() {
     fi
 }
 
+# Bail out with a clear message if podman isn't on PATH. Without this, `enter`
+# reaches `podman build` in make.nu, fails to find the binary, and reports an
+# (empty) build log — and the secrets/ls paths hit podman directly too.
+require_podman() {
+    command -v podman >/dev/null 2>&1 || {
+        cat >&2 <<'EOF'
+agentsbox: podman is required but was not found on your PATH.
+
+  Install Podman: https://podman.io/docs/installation
+  After installing, ensure `podman` is on your PATH and run: agentsbox doctor
+EOF
+        exit 1
+    }
+}
+
 # Read a single key from .agentsbox/config.toml. nushell PARSES the TOML (never
 # sources it), so a project's config can't run code at `enter` time. File and key
 # are passed via env to avoid quoting issues.
@@ -113,6 +128,7 @@ EOF
 }
 
 cmd_enter() {
+    require_podman
     local auth="" a2a="" agent_name="" workdir="" web="" web_bind=""
     local launch_agent="" launch_agent_set=""
     while [[ $# -gt 0 ]]; do
@@ -244,6 +260,7 @@ cmd_list() {
 }
 
 cmd_load_secret() {
+    require_podman
     local file="" name="" target="" project="$PWD" project_set="" global=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -305,6 +322,7 @@ cmd_load_secret() {
 }
 
 cmd_remove_secret() {
+    require_podman
     local name="" project="$PWD" project_set="" global=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -449,6 +467,7 @@ cmd_config() {
 }
 
 cmd_update() {
+    require_podman
     exec nu "$SCRIPT_DIR/make.nu" update
 }
 

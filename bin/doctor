@@ -29,7 +29,7 @@ def check-nix [] {
 
 def check-podman [] {
     if not (has-cmd "podman") {
-        return [(fail-check "Podman not installed" "https://podman.io/get-started")]
+        return [(fail-check "Podman not installed" "https://podman.io/docs/installation")]
     }
 
     let v = (podman --version | str trim)
@@ -72,7 +72,12 @@ def check-podman [] {
 def check-image [] {
     # The version is threaded from flake.nix via AGENTSBOX_VERSION (see make.nu's
     # image-tag); fall back to `latest` when run outside the wrapper/dev shell.
+    # Skip the image probe when podman isn't installed — check-podman already
+    # reported that, and probing here would crash with an unhandled external error.
     let tag = ($env.AGENTSBOX_VERSION? | default "latest")
+    if not (has-cmd "podman") {
+        return []
+    }
     let r = (do { podman image exists $"agentsbox:($tag)" } | complete)
     if $r.exit_code == 0 {
         [(pass $"Image agentsbox:($tag) built")]
