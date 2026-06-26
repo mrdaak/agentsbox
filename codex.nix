@@ -1,20 +1,9 @@
 # Pin the OpenAI Codex CLI to a specific release.
-#
-# Fetch OpenAI's official prebuilt release binary
-# — the Linux assets are statically linked musl builds, so they run on NixOS
-# as-is — and just install it. This is the codex analog of claude-code.nix:
-# pin a version + per-platform hash, no source build, decoupled from nixpkgs lag.
-#
-# To upgrade: bump `version`, then set the matching `sha256`. Easiest way to get
-# a hash is:
-#   nix-prefetch-url https://github.com/openai/codex/releases/download/rust-v<version>/codex-<target>.tar.gz
-#   nix hash convert --to sri --hash-algo sha256 <printed-base32>
-# or build once with pkgs.lib.fakeHash and let Nix print the real hash.
 
 { pkgs ? import <nixpkgs> { } }:
 
 let
-  version = "0.138.0";
+  version = "0.142.2";
 
   target = {
     aarch64-linux = "aarch64-unknown-linux-musl";
@@ -24,11 +13,10 @@ let
   }.${pkgs.stdenv.hostPlatform.system};
 
   sha256 = {
-    aarch64-linux = "sha256-uOkG7fvBquAIucWPdmJmaiyRpYfCy8kRlqD2L8UQI1w=";
-    # Fill these in the first time you build on the platform:
-    x86_64-linux = pkgs.lib.fakeHash;
-    aarch64-darwin = pkgs.lib.fakeHash;
-    x86_64-darwin = pkgs.lib.fakeHash;
+    aarch64-linux = "sha256-qIk3Lzn7PexuOfIjM5aFoBHTm7XEmoFHDUKbh23IZJM=";
+    x86_64-linux = "sha256-EskAXId46fdiOxe3fzy/VugFmAmsaAJ7NWDBqBOapOI=";
+    aarch64-darwin = "sha256-JkwVpjFGF22wMUxUcoQ3yXsRIbsmF8QmwGkl1itEVLM=";
+    x86_64-darwin = "sha256-KU6BDnVKXGh7Cedr84YjjJ75/LWFI1S+wGPn+n1A1aU=";
   }.${pkgs.stdenv.hostPlatform.system};
 
   codex = pkgs.stdenv.mkDerivation (finalAttrs: {
