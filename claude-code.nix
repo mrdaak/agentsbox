@@ -1,17 +1,9 @@
 # Pin claude-code to a newer release than the nixpkgs channel currently ships.
-#
-# Upstream's derivation just downloads a prebuilt native binary and runs it
-# through autoPatchelfHook + a wrapper (ripgrep/procps/bubblewrap/socat). We
-# reuse all of that via overrideAttrs and only swap the version + source.
-#
-# To upgrade: bump `version`, then set the matching `sha256`. Easiest way to
-# get the hash is to build once with `pkgs.lib.fakeHash` and let Nix print the
-# real one, or run `nix hash file <path-to-the-downloaded-claude-binary>`.
 
 { pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
 
 let
-  version = "2.1.170";
+  version = "2.1.193";
 
   platformKey = {
     aarch64-linux = "linux-arm64";
@@ -21,11 +13,10 @@ let
   }.${pkgs.stdenv.hostPlatform.system};
 
   sha256 = {
-    aarch64-linux = "sha256-G7nQMkQKdVMvfdTK+8aH8iCq8Wxj66F+GS377C8EvSU=";
-    # Fill these in the first time you build on the platform:
-    x86_64-linux = pkgs.lib.fakeHash;
-    aarch64-darwin = pkgs.lib.fakeHash;
-    x86_64-darwin = pkgs.lib.fakeHash;
+    aarch64-linux = "sha256-OUVM5i55XutIcagfZFPNqW6Sbi25pN1B0OwbYLAVNEg=";
+    x86_64-linux = "sha256-yfBNkp8YvZoQHziX8n3k4eDxXr6EANSq8CmD1z3Wax0=";
+    aarch64-darwin = "sha256-91E6MDha2QGcI3Im/W7EZQizBi6+/Kiu2+OX0RGoGP8=";
+    x86_64-darwin = "sha256-y6XDvcqKtfjnWQQGcC1Bj2EU2bOfSPFodmgOiBq/Hug=";
   }.${pkgs.stdenv.hostPlatform.system};
 
   claude-code = pkgs.claude-code.overrideAttrs (old: {
