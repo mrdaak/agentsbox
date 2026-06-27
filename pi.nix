@@ -1,24 +1,12 @@
 # Pin pi-coding-agent to a newer release than the nixpkgs channel currently ships.
-#
-# Upstream's derivation builds from source using buildNpmPackage. We reuse all of
-# that via overrideAttrs and only swap the version, source hash, and npm
-# dependencies.
-#
-# To upgrade: bump `version`, then set the matching `srcHash` and `npmDepsHash`.
-# Easiest way to get the hashes is to build once with `pkgs.lib.fakeHash` and
-# let Nix print the real ones:
-#
-#   nix build --impure --expr 'with import ./pi.nix { }; pi-coding-agent.outPath'
-#
-# Or use nix-prefetch-from-github / prefetch-npm-deps.
 
 { pkgs ? import <nixpkgs> { } }:
 
 let
-  version = "0.79.9";
+  version = "0.80.2";
 
-  srcHash = "sha256-+h1D51JM4F2iHCzTA57A5/uAzHQBKSlz/7x3/PtQhec=";
-  npmDepsHash = "sha256-uej0uXVbihmxpuvviCK/5JFSEqDamIW5ETOL/ZKW45g=";
+  srcHash = "sha256-aKtgPc3rwHEp856jP3N7nImph0CSG+gsWq9OVci3hmE=";
+  npmDepsHash = "sha256-1EGs8lX8XoAnRtS+pw4lBRm24U/vtVB2loVRmZyd4Z8=";
 
   src = pkgs.fetchFromGitHub {
     owner = "earendil-works";
