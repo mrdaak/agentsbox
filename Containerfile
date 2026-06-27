@@ -7,7 +7,9 @@ RUN printf 'experimental-features = nix-command flakes\nbuild-users-group =\n' >
 # the source of truth for the tool set; it imports the version-pinned claude-code.nix, codex.nix, and pi.nix.
 # --priority resolves collisions against packages already present in the base image's profile.
 COPY packages.nix claude-code.nix codex.nix pi.nix /tmp/nix/
-RUN nix profile add --priority 4 -f /tmp/nix/packages.nix
+RUN nix profile add --priority 4 -f /tmp/nix/packages.nix \
+ && nix-collect-garbage -d \
+ && rm -rf /tmp/nix
 
 # Set up XDG directories for proper config loading
 ENV XDG_CONFIG_HOME=/root/.config
