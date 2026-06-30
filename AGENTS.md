@@ -36,7 +36,7 @@ make.nu                   Orchestration (nushell): build / run / update / shell 
 zellij-config.kdl         Baked-in Zellij config (locked mode, no release notes/tips)
 skills/                   Bundled skills (SKILL.md), installed via `agentsbox install-skills`
   agentsbox-ask-agent/      A2A skill: ask another project's agent a question
-  nix-project-setup/       Skill: scaffold a minimal flake.nix for a new project
+  scaffold-minimal-flake/  Skill: scaffold a minimal flake.nix for a new project
 README.md                 User-facing documentation
 ```
 
