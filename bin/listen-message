@@ -85,6 +85,10 @@ function runAgent(prompt) {
     child.stderr.on('data', (d) => (stderr += d));
     child.on('error', (err) => {
       clearTimeout(timer);
+      if (err.code === 'ENOENT') {
+        reject(new Error(`agent binary '${AGENT_BIN}' not found in this image; add it to installed_agents and rebuild`));
+        return;
+      }
       reject(err);
     });
     child.on('close', (code) => {

@@ -6,8 +6,11 @@ RUN printf 'experimental-features = nix-command flakes\nbuild-users-group =\n' >
 # Install all dev tools via nix in a single profile generation. packages.nix is
 # the source of truth for the tool set; it imports the version-pinned claude-code.nix, codex.nix, and pi.nix.
 # --priority resolves collisions against packages already present in the base image's profile.
+# AGENTSBOX_INSTALLED_AGENTS selects which agents to bake in (empty default => all four).
+ARG AGENTSBOX_INSTALLED_AGENTS=
 COPY packages.nix claude-code.nix codex.nix pi.nix /tmp/nix/
-RUN nix profile add --priority 4 -f /tmp/nix/packages.nix \
+RUN echo "$AGENTSBOX_INSTALLED_AGENTS" \
+ && nix profile add --priority 4 -f /tmp/nix/packages.nix \
  && nix-collect-garbage -d \
  && rm -rf /tmp/nix
 

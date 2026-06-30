@@ -82,6 +82,11 @@ start_session() {
     fi
     # With an agent configured, open straight into it; otherwise a plain shell.
     if [ -n "${AGENTSBOX_AGENT:-}" ]; then
+        if ! command -v "$AGENTSBOX_AGENT" >/dev/null 2>&1; then
+            echo "agentsbox: agent '$AGENTSBOX_AGENT' is not installed in this image." >&2
+            echo "  Add it to installed_agents in ~/.config/agentsbox.toml and run: agentsbox update" >&2
+            exit 1
+        fi
         write_agent_layout
         exec zellij attach --create "$SESSION_NAME" options --default-layout "$AGENT_LAYOUT"
     fi

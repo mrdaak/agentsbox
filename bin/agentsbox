@@ -52,6 +52,47 @@ config_volumes() {
         2>/dev/null || true
 }
 
+# Fixed set of agents that can be baked into the image (installed_agents).
+# Single source of truth — is_valid_agent and the error messages both read it.
+VALID_AGENTS="claude codex pi opencode"
+
+is_valid_agent() {
+    local a IFS=$' \t\n'
+    for a in $VALID_AGENTS; do
+        [[ "$1" == "$a" ]] && return 0
+    done
+    return 1
+}
+
+# Read installed_agents (global-only) from ~/.config/agentsbox.toml as one agent
+# name per line. Absent key or malformed value -> empty (caller maps to the
+# "all four" default). Parses, never sources.
+config_installed_agents() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" nu -c \
+        'try { open $env.CFG_FILE | get installed_agents | to text } catch { "" }' \
+        2>/dev/null || true
+}
+
+# Validate a selection read from stdin (one agent name per line): >=1 entry and
+# every name in the fixed set. Used by `enter` (config check), the wizard, and
+# `config installed_agents`.
+validate_agent_names() {
+    local name count=0
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        count=$((count + 1))
+        is_valid_agent "$name" \
+            || { echo "installed_agents: unknown agent '$name' (valid: $VALID_AGENTS)" >&2; return 1; }
+    done
+    if [[ "$count" -eq 0 ]]; then
+        echo "installed_agents: at least one agent is required (valid: $VALID_AGENTS)" >&2
+        return 1
+    fi
+    return 0
+}
+
 usage() {
     cat <<EOF
 Usage: agentsbox <subcommand> [options]
@@ -71,8 +112,13 @@ Subcommands:
 Options for 'config' (agentsbox config <field> <value> [options]):
   --global       Edit ~/.config/agentsbox.toml instead of the current project's
                  .agentsbox/config.toml (applies to every project)
-  Currently only the 'agent' field is supported (e.g. claude, codex, opencode, pi,
-  or 'none' for a plain shell).
+  Supported fields:
+    agent            the agent to auto-launch in a session
+                     (claude, codex, opencode, pi, or 'none' for a plain shell)
+    installed_agents which agents get baked into the image at build time
+                     (global-only — requires --global; comma-separated, e.g.
+                     'claude,codex'; at least one; see 'agentsbox enter' for the
+                     one-time selection wizard)
 
 Options for 'enter':
   --auth         Bind host port 1455:1455 for OpenCode auth flows
@@ -177,6 +223,39 @@ cmd_enter() {
     if [[ -n "$launch_agent" && "$launch_agent" != "none" ]]; then
         [[ "$launch_agent" =~ ^[A-Za-z0-9_-]+$ ]] \
             || { echo "enter: invalid agent '$launch_agent' (expected a bare command name, e.g. claude, codex, opencode)" >&2; exit 1; }
+    fi
+
+    # installed_agents is global-only and baked into the image at build time.
+    # Validate it early so a typo'd name fails here instead of mid-build. Empty
+    # (key absent) is valid here and means "all four"; it also gates the
+    # first-run wizard below.
+    local installed=""
+    if [[ -f "$global_conf" ]]; then
+        installed="$(config_installed_agents "$global_conf")"
+        if [[ -n "$installed" ]]; then
+            printf '%s\n' "$installed" | validate_agent_names || exit 1
+        fi
+    fi
+
+    # First-run wizard: if no installed_agents key is set, stdin is a TTY, and
+    # no image exists yet, ask once which agents to bake in. Persists the
+    # choice to global config so it never re-prompts (and so make.nu's
+    # resolve-installed-agents picks it up for the build that follows). A TTY
+    # is required — `input list --multi` errors on non-interactive stdin, so
+    # CI / `enter < /dev/null` skip this and build the default (all four).
+    if [[ -z "$installed" && -t 0 ]]; then
+        local img_tag="${AGENTSBOX_VERSION:-latest}"
+        if ! podman image exists "agentsbox:$img_tag" >/dev/null 2>&1; then
+            local chosen
+            chosen="$(nu "$SCRIPT_DIR/make.nu" select-agents)" || {
+                echo "agentsbox: no installed_agents set. Add one in ~/.config/agentsbox.toml or re-run interactively, e.g." >&2
+                echo "  agentsbox config installed_agents claude,codex --global" >&2
+                exit 1
+            }
+            printf '%s\n' "$chosen" | validate_agent_names || exit 1
+            set_toml_list_key "$global_conf" installed_agents "$chosen"$'\n'
+            echo "agentsbox: saved installed_agents to $global_conf"
+        fi
     fi
 
     # A project can ship its own A2A server at .agentsbox/listen (e.g. a wiki).
@@ -422,6 +501,19 @@ set_toml_key() {
             | save -f $env.CFG_FILE'
 }
 
+# Write a list-of-strings key as a TOML array. Values arrive one per line via
+# CFG_LIST (newline-joined); nushell reconstitutes the list so `to toml` emits a
+# real array, not a stringified list. Parses, never sources.
+set_toml_list_key() {
+    local file="$1" key="$2" values="$3"
+    mkdir -p "$(dirname "$file")"
+    CFG_FILE="$file" CFG_KEY="$key" CFG_LIST="$values" nu -c \
+        'if ($env.CFG_FILE | path exists) { open $env.CFG_FILE } else { {} }
+            | upsert $env.CFG_KEY ($env.CFG_LIST | lines | where $it != "")
+            | to toml
+            | save -f $env.CFG_FILE'
+}
+
 cmd_config() {
     local field="" value="" global=""
     while [[ $# -gt 0 ]]; do
@@ -436,31 +528,58 @@ cmd_config() {
 
     if [[ -z "$field" || -z "$value" ]]; then
         echo "usage: agentsbox config <field> <value> [--global]" >&2
-        echo "  currently supported fields: agent" >&2
-        exit 1
-    fi
-    if [[ "$field" != "agent" ]]; then
-        echo "config: unsupported field '$field' (first version supports only 'agent')" >&2
-        exit 1
-    fi
-    # Same constraint `enter` enforces on the agent it launches: a bare command
-    # name, or the literal 'none' to force a plain shell.
-    if [[ "$value" != "none" && ! "$value" =~ ^[A-Za-z0-9_-]+$ ]]; then
-        echo "config: invalid agent '$value' (expected a bare command name, e.g. claude, codex, opencode, pi, or 'none')" >&2
+        echo "  supported fields: agent, installed_agents" >&2
         exit 1
     fi
 
     local file
-    if [[ -n "$global" ]]; then
-        file="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
-    else
-        file="$PWD/.agentsbox/config.toml"
-    fi
+    case "$field" in
+        agent)
+            # Same constraint `enter` enforces on the agent it launches: a bare command
+            # name, or the literal 'none' to force a plain shell.
+            if [[ "$value" != "none" && ! "$value" =~ ^[A-Za-z0-9_-]+$ ]]; then
+                echo "config: invalid agent '$value' (expected a bare command name, e.g. claude, codex, opencode, pi, or 'none')" >&2
+                exit 1
+            fi
+            if [[ -n "$global" ]]; then
+                file="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+            else
+                file="$PWD/.agentsbox/config.toml"
+            fi
+            set_toml_key "$file" "$field" "$value"
+            ;;
+        installed_agents)
+            # Global-only: the image is a host-level artifact, so a per-project
+            # value is meaningless and rejected outright.
+            if [[ -z "$global" ]]; then
+                echo "config: installed_agents is global-only — pass --global" >&2
+                exit 1
+            fi
+            file="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+            # Comma-separated value -> one name per line for the list writer.
+            local names=""
+            local IFS=','
+            for part in $value; do
+                part="${part## }"; part="${part%% }"
+                [[ -n "$part" ]] || continue
+                is_valid_agent "$part" \
+                    || { echo "config: invalid agent '$part' (valid: $VALID_AGENTS)" >&2; exit 1; }
+                names+="${part}"$'\n'
+            done
+            if [[ -z "$names" ]]; then
+                echo "config: installed_agents requires at least one agent (valid: $VALID_AGENTS)" >&2
+                exit 1
+            fi
+            set_toml_list_key "$file" "$field" "$names"
+            ;;
+        *)
+            echo "config: unsupported field '$field' (supported: agent, installed_agents)" >&2
+            exit 1
+            ;;
+    esac
 
-    set_toml_key "$file" "$field" "$value"
-
     if [[ -n "$global" ]]; then
-        echo "Set $field = \"$value\" in $file (applies to every project)"
+        echo "Set $field in $file"
     else
         echo "Set $field = \"$value\" in $file"
     fi

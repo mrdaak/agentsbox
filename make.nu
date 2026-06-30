@@ -36,6 +36,20 @@ def workdir-hash [workdir: string] {
     $workdir | ^sha1sum | split row " " | first | str substring 0..<8
 }
 
+# The agents baked into the image (global-only key in ~/.config/agentsbox.toml).
+# Reads via `nu -c` parse (never sources); falls back to all four when the key is
+# missing or the file absent. make.nu is the build-time source of truth, so the
+# selection is resolved here — bin/agentsbox only validates it at enter time.
+const ALL_AGENTS = [claude codex pi opencode]
+
+def resolve-installed-agents [] {
+    let cfg = ($env.XDG_CONFIG_HOME? | default ($"($env.HOME)/.config"))
+    let file = ($"($cfg)/agentsbox.toml")
+    let raw = (CFG_FILE=$file nu -c 'try { open $env.CFG_FILE | get installed_agents | to text } catch { "" }')
+    let parsed = ($raw | lines | where $it != "")
+    if ($parsed | is-empty) { $ALL_AGENTS } else { $parsed }
+}
+
 # --secret flags for `podman run`. `podman secret ls` has no label filter, so match
 # by name prefix: project secrets (agent-<hash>-) first, then globals
 # (agent-global-). The mount target lives in the agents.target label. On a shared
@@ -125,11 +139,12 @@ def require-podman [] {
 def build-image [] {
     require-podman
     let log = (build-log)
+    let agents = (resolve-installed-agents)
     try {
         cd (root)
         print "Building sandbox environment…"
         (
-            podman build -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
+            podman build --build-arg $"AGENTSBOX_INSTALLED_AGENTS=($agents | str join (char nl))" -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
             out+err>| tee { save --force --raw $log }
             | lines
             | each {|line|
@@ -157,7 +172,8 @@ export def "main build" [] {
 export def "main update" [] {
     require-podman
     cd (root)
-    podman build --no-cache -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
+    let agents = (resolve-installed-agents)
+    podman build --no-cache --build-arg $"AGENTSBOX_INSTALLED_AGENTS=($agents | str join (char nl))" -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
     do -i { podman volume rm $NIX_VOLUME }
 }
 
@@ -269,6 +285,25 @@ export def "main clean-nix-store" [] {
 ## Remove the persistent pnpm store volume (next run re-populates from image)
 export def "main clean-pnpm-store" [] {
     podman volume rm $PNPM_VOLUME
+}
+
+## One-time interactive agent selection (first-run wizard). Renders a
+## multi-select via nushell's `input list --multi`; prints the chosen agents
+## one-per-line on success. ESC/Ctrl-C cancels (exits non-zero, no output). An
+## empty submit re-prompts since >=1 agent is required. Called by bin/agentsbox
+## only when stdin is a TTY and no installed_agents key is set yet.
+export def "main select-agents" [] {
+    let p = "Select agents to install in the image (Space=toggle, Enter=confirm, Esc=cancel):"
+    loop {
+        let r = ($ALL_AGENTS | input list --multi $p)
+        if $r == null { exit 1 }
+        let chosen = ($r | default [])
+        if ($chosen | is-not-empty) {
+            $chosen | each { |a| print $a }
+            return
+        }
+        print -e "Select at least one agent."
+    }
 }
 
 export def main [] {
