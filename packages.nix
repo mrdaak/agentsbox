@@ -27,6 +27,7 @@ pkgs.buildEnv {
     ncurses
     tree
     bash
+    bubblewrap
     curl
     gnutar
     nodejs
