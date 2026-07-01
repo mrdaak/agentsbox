@@ -37,16 +37,13 @@ def workdir-hash [workdir: string] {
 }
 
 # The agents baked into the image (global-only key in ~/.config/agentsbox.toml).
-# Reads via `nu -c` parse (never sources); falls back to all four when the key is
-# missing or the file absent. make.nu is the build-time source of truth, so the
-# selection is resolved here — bin/agentsbox only validates it at enter time.
+# Falls back to all four when the key is missing or the file absent.
 const ALL_AGENTS = [claude codex pi opencode]
 
 def resolve-installed-agents [] {
     let cfg = ($env.XDG_CONFIG_HOME? | default ($"($env.HOME)/.config"))
     let file = ($"($cfg)/agentsbox.toml")
-    let raw = (CFG_FILE=$file nu -c 'try { open $env.CFG_FILE | get installed_agents | to text } catch { "" }')
-    let parsed = ($raw | lines | where $it != "")
+    let parsed = (try { open $file | get installed_agents | to text | lines | where $it != "" } catch { [] })
     if ($parsed | is-empty) { $ALL_AGENTS } else { $parsed }
 }
 
@@ -224,10 +221,20 @@ export def "main run" [
         -p 4096
     ]
 
-    if $auth {
+    let network = ($env.AGENTSBOX_NETWORK? | default "" | str trim)
+    let no_publish = ($network == "host" or ($network | str starts-with "container:"))
+    if $no_publish and ($auth or $web) {
+        print -e $"agentsbox: --network '($network)' can't publish ports; ignoring --auth/--web"
+    }
+    if $network != "" and $a2a {
+        print -e $"agentsbox: --network '($network)' is incompatible with --a2a, which requires agentsbox-net; aborting"
+        exit 1
+    }
+
+    if $auth and not $no_publish {
         $run_args = ($run_args | append ["-p" "1455:1455"])
     }
-    if $web {
+    if $web and not $no_publish {
         # Zellij's web client binds the container loopback, but podman's bridge DNATs
         # a published port to the container's interface IP (not loopback), so an
         # entrypoint socat relay bridges the two — without it the connect resets
@@ -245,6 +252,9 @@ export def "main run" [
             -e A2A_ENABLED=1
             -e $"A2A_AGENT=($a2a_agent)"
         ])
+    }
+    if $network != "" {
+        $run_args = ($run_args | append ["--network" $network])
     }
     # The entrypoint reads AGENTSBOX_AGENT to open the session straight into this agent.
     if ($agent | is-not-empty) and $agent != "none" {

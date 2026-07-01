@@ -176,7 +176,7 @@ EOF
 cmd_enter() {
     require_podman
     local auth="" a2a="" agent_name="" workdir="" web="" web_bind=""
-    local launch_agent="" launch_agent_set=""
+    local launch_agent="" launch_agent_set="" network="" network_set=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --auth) auth=1; shift ;;
@@ -185,6 +185,7 @@ cmd_enter() {
             --agent) launch_agent="$2"; launch_agent_set=1; shift 2 ;;
             --a2a)  a2a=1; shift ;;
             --name) agent_name="$2"; shift 2 ;;
+            --network) network="$2"; network_set=1; shift 2 ;;
             -*)     echo "enter: unknown option: $1" >&2; exit 1 ;;
             *)      workdir="$1"; shift ;;
         esac
@@ -200,20 +201,28 @@ cmd_enter() {
     # identity (AGENT_NAME) and the auto-launch agent, never whether to serve A2A
     # — that stays the user's explicit choice.
     local config="$workdir/.agentsbox/config.toml"
+    local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
     # Declared [[volumes]] (name<TAB>target per line); validated and mounted by
     # make.nu, which namespaces them as agent-<hash>-<name>.
     local volumes=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
         volumes="$(config_volumes "$config")"
+        # network: CLI flag wins, else project config, else global config.
+        [[ -n "$network_set" ]] || network="$(config_value "$config" network)"
     fi
+    # CLI flag and project config already fill $network; only fall back to the
+    # global config when both were empty (project beats global, per the AGENTS.md
+    # precedence rule). Guarding on $network (not $network_set) preserves a
+    # project value when the global file is absent — otherwise the empty global
+    # read would clobber it.
+    [[ -n "$network" ]] || network="$(config_value "$global_conf" network)"
 
     # Final fallback: alias = project dir basename.
     [[ -n "$agent_name" ]] || agent_name="$(basename "$workdir")"
 
     # Precedence: --agent > project config `agent` > global agentsbox.toml `agent`.
     # "none"/unset keeps the plain-shell behavior.
-    local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
     if [[ -z "$launch_agent_set" ]]; then
         if [[ -f "$config" ]]; then
             launch_agent="$(config_value "$config" agent)"
@@ -296,6 +305,9 @@ cmd_enter() {
         done <<< "$volumes"
     fi
     export AGENTSBOX_VOLUMES="$agentsbox_volumes"
+    # `network` is a single scalar, so it rides a sibling env var (same transport
+    # pattern as AGENTSBOX_VOLUMES) into make.nu, which appends it as --network.
+    export AGENTSBOX_NETWORK="$network"
 
     # --web exposes Zellij's web client (listens on 8082 in-container). Map it to host
     # port <index>8082 (agent 1 -> 18082, agent 2 -> 28082, …) so concurrent agents
@@ -528,7 +540,7 @@ cmd_config() {
 
     if [[ -z "$field" || -z "$value" ]]; then
         echo "usage: agentsbox config <field> <value> [--global]" >&2
-        echo "  supported fields: agent, installed_agents" >&2
+        echo "  supported fields: agent, network, installed_agents" >&2
         exit 1
     fi
 
@@ -539,6 +551,20 @@ cmd_config() {
             # name, or the literal 'none' to force a plain shell.
             if [[ "$value" != "none" && ! "$value" =~ ^[A-Za-z0-9_-]+$ ]]; then
                 echo "config: invalid agent '$value' (expected a bare command name, e.g. claude, codex, opencode, pi, or 'none')" >&2
+                exit 1
+            fi
+            if [[ -n "$global" ]]; then
+                file="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+            else
+                file="$PWD/.agentsbox/config.toml"
+            fi
+            set_toml_key "$file" "$field" "$value"
+            ;;
+        network)
+            # A bare podman --network spec (host / container:<name> / a named net).
+            # No shell metachars: this is passed straight to podman run --network.
+            if [[ ! "$value" =~ ^[A-Za-z0-9_.:/=-]+$ ]]; then
+                echo "config: invalid network '$value' (expected a podman --network spec, e.g. host, container:proxy, agentsbox-net)" >&2
                 exit 1
             fi
             if [[ -n "$global" ]]; then
@@ -573,7 +599,7 @@ cmd_config() {
             set_toml_list_key "$file" "$field" "$names"
             ;;
         *)
-            echo "config: unsupported field '$field' (supported: agent, installed_agents)" >&2
+            echo "config: unsupported field '$field' (supported: agent, network, installed_agents)" >&2
             exit 1
             ;;
     esac
