@@ -34,10 +34,6 @@ let
     dontConfigure = true;
     dontBuild = true;
 
-    # bwrap rides with codex so it's present when codex is installed and absent
-    # otherwise; only Linux needs it (codex's sandbox path is Linux-only).
-    propagatedBuildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.bubblewrap ];
-
     installPhase = ''
       runHook preInstall
       install -Dm755 codex-${target} $out/bin/codex

@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# codex-container — disable nested Codex sandboxing for `codex exec` only
+# codex-container — run Codex unsandboxed; the Podman container is the boundary
 set -euo pipefail
 
 REAL_CODEX="/root/.nix-profile/bin/codex"
 
-if [[ "${1:-}" == "exec" ]]; then
-    exec "$REAL_CODEX" --dangerously-bypass-approvals-and-sandbox "$@"
-fi
-
-exec "$REAL_CODEX" "$@"
+exec "$REAL_CODEX" --dangerously-bypass-approvals-and-sandbox "$@"

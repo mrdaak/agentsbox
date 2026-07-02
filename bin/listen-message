@@ -21,11 +21,6 @@ const { randomUUID } = require('crypto');
 
 const PORT = parseInt(process.env.A2A_PORT || '4096', 10);
 const AGENT_NAME = process.env.AGENT_NAME || require('os').hostname();
-// The local agent invocation. A2A_AGENT is set from the session's agent (see
-// `agentsbox enter --agent` / the `agent` config key); we map it to the headless
-// command run over /workspace. Only claude and codex are wired in — anything
-// else (or empty) defaults to Claude Code. Codex goes through the in-container
-// `codex` wrapper, which adds the nested-sandbox bypass flags for `codex exec`.
 const A2A_AGENTS = {
   claude: { bin: 'claude', args: ['-p'] },
   codex: { bin: 'codex', args: ['exec'] },
