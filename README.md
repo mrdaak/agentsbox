@@ -3,25 +3,31 @@ agentsbox
 
 Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
 
+agentsbox is for developers who want the power of AI coding agents without letting them touch the host filesystem, run arbitrary commands as your user, or see credentials they don't need. It wraps each project's agent in a rootless, ephemeral Podman container — pre-configured so your existing agent config, skills, and MCPs carry over automatically.
+
 ```bash
 agentsbox enter
 ```
 
-Opens the current directory in a secure agent shell (green border = sandboxed). Agents come pre-installed; your existing config, skills, and MCPs carry over automatically.
+Opens the current directory in a secure agent shell (green border = sandboxed). Agents come pre-installed; your existing config, skills, and MCPs carry over automatically. On first run you'll get a one-time checklist to pick which agents to bake into the image (saved to global config, never asked again).
 
 Isolated doesn't mean limited. agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
 
 ---
 
-## Install
+## Prerequisites
 
-- [Nix](https://nixos.org/download/) package manager
+- **[Nix](https://nixos.org/download/)** package manager — used to install agentsbox and to provision the in-container toolchain.
+- **[Podman](https://podman.io/getting-started/installation)** — the container engine. Must be installed and running (rootless; no daemon-as-root needed).
+- **OS:** Linux and macOS. (On macOS, Podman runs in a lightweight VM — `agentsbox doctor` will tell you if the machine isn't ready.) Windows is not currently supported; use WSL2 + Linux Podman.
+
+## Install
 
 ```bash
 nix profile install github:mrdaak/agentsbox
 ```
 
-Now you can run `agentsbox` from any project directory.
+Now you can run `agentsbox` from any project directory. If anything goes wrong, start with `agentsbox doctor`.
 
 ## Commands
 
@@ -33,7 +39,7 @@ Now you can run `agentsbox` from any project directory.
 | `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
 | `agentsbox secrets rm <name>`  | Remove a secret from a project's agent shell                                      |
 | `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
-| `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`              |
+| `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`             |
 | `agentsbox update`             | Pull the latest base image and rebuild the container                              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |
 | `agentsbox help`               | Show usage                                                                        |
@@ -41,6 +47,23 @@ Now you can run `agentsbox` from any project directory.
 `agentsbox enter --a2a` (enable [agent-to-agent messaging](#agent-to-agent-messaging-a2a)).
 
 `agentsbox enter --web` (drive your session from a [browser](#use-it-from-your-browser)).
+
+## Installed agents
+
+Four agents can be baked in: Claude Code, OpenAI Codex, Pi, OpenCode. You
+choose which on first run — pick only what you use to keep the image small.
+The selection is **global** (host-level, not per-project) in
+`~/.config/agentsbox.toml`:
+
+```toml
+# ~/.config/agentsbox.toml
+installed_agents = ["claude"]
+```
+
+- On first `enter` (TTY, no key, no image yet) you get a one-time checklist;
+  the choice is saved so it never asks again. CI / non-interactive runs skip
+  it and build all four.
+- Set manually: `agentsbox config installed_agents claude,codex --global`.
 
 ---
 
@@ -68,6 +91,23 @@ agentsbox secrets rm .env                       # this project's .env secret
 agentsbox secrets rm key --project ~/src/other  # another project's secret
 agentsbox secrets rm .npmrc --global            # the global secret
 ```
+
+---
+
+## Persistent volumes
+
+Toolchains or caches that should survive across runs (a Go install dir, an npm
+cache, …) can be declared as named volumes in `.agentsbox/config.toml`:
+
+```toml
+[[volumes]]
+name   = "go-cache"
+target = "/root/go"
+```
+
+On `enter`, each volume is created if missing (namespaced so projects don't
+collide) and mounted at `target`. The config is parsed, never sourced — a
+cloned repo can't run code at `enter` time.
 
 ---
 
@@ -100,6 +140,8 @@ Each agent stays focused on its own project — the frontend agent keeps a clean
 context, and when it needs a backend API it just asks the backend agent instead of reaching into
 files it shouldn't see. You get a specialist per project, not one agent juggling everything.
 
+Each box's A2A alias defaults to its **project directory basename** (`backend/` → `backend`); override it with `agentsbox enter --a2a --agent-name <name>`.
+
 ---
 
 ## Use it from your browser
@@ -110,16 +152,15 @@ files it shouldn't see. You get a specialist per project, not one agent juggling
 
 ## Security
 
-- **Containers**
-  - **lightweight**
-  - **isolated**: vulnerability in 1 container is isolated from other parts
-  - **short-lived**: frequently rebuilt from version-controlled sources
-- **Ephemeral** (`--rm`) — containers are destroyed after each session
-> Ephemeral means that the container can be stopped and destroyed,
-> then rebuilt and replaced with an absolute minimum set up and configuration.
-[Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers)
-- **Workspace-only** — the agent sees `/workspace` plus the explicitly-listed config mounts, nothing else
-- **no-new-privileges** — flag prevents privilege escalation inside the container
+agentsbox runs each agent **rootless** (never as root on your host) in an ephemeral Podman container:
+
+- **Rootless** — Podman runs as your user; there is no root daemon and the container has no path to host root.
+- **Workspace-only filesystem** — the agent sees `/workspace` (your project) plus the explicitly-listed config/skill mounts, nothing else on your host.
+- **`no-new-privileges`** — `--security-opt no-new-privileges:true` blocks any privilege escalation inside the container.
+- **Ephemeral (`--rm`)** — containers are destroyed after each session, so nothing persists between runs unless you mount it. ([Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers))
+- **Reproducible base** — the image is built from a pinned `ghcr.io/nixos/nix` base and a version-pinned Nix profile, rebuilt from version-controlled sources.
+
+Secrets are delivered as Podman secrets (read-only), never env vars, so they never appear in `inspect`/logs.
 
 ---
 
@@ -143,4 +184,4 @@ done
 
 
 
-Save it as "Open in agentsbox"; now right-click any folder → **Quick Actions** to open a Terminal there running `agentsbox enter`
+Save it as "Open in agentsbox"; now right-click any folder → **Quick Actions** to open a Terminal there running `agentsbox enter`.
