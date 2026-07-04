@@ -1,17 +1,17 @@
 agentsbox
 ==================
 
-Run your favourite AI coding agents (Claude Code, OpenCode, Codex, Pi) in a secure environment isolated from your host OS.
+Run your favourite AI coding agents — Claude Code, OpenCode, Codex, Pi — in a rootless, ephemeral sandbox isolated from your host OS.
 
-agentsbox is for developers who want the power of AI coding agents without letting them touch the host filesystem, run arbitrary commands as your user, or see credentials they don't need. It wraps each project's agent in a rootless, ephemeral Podman container — pre-configured so your existing agent config, skills, and MCPs carry over automatically.
+It's for developers who want that power without letting an agent touch the host filesystem, run commands as your user, or read credentials it doesn't need. Each project's agent runs in its own Podman container, pre-configured so your agent config, skills, and MCPs just work.
 
 ```bash
 agentsbox enter
 ```
 
-Opens the current directory in a secure agent shell (green border = sandboxed). Agents come pre-installed; your existing config, skills, and MCPs carry over automatically. On first run you'll get a one-time checklist to pick which agents to bake into the image (saved to global config, never asked again).
+Opens the current directory in a sandboxed agent shell — the green border means you're isolated. On first run, a one-time checklist picks which agents to bake into the image (saved globally, never asked again).
 
-Isolated doesn't mean limited. agentsbox can hand agents the [secrets](#secrets) they need, let them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [set up projects automatically with Nix](#automatic-project-setup-with-nix). You can even drive any session from your [browser](#use-it-from-your-browser).
+Isolated doesn't mean limited. agentsbox hands agents the [secrets](#secrets) they need, lets them collaborate across projects over [A2A](#agent-to-agent-messaging-a2a), and [sets up projects automatically with Nix](#automatic-project-setup-with-nix) — and you can drive any session from your [browser](#use-it-from-your-browser).
 
 ---
 
