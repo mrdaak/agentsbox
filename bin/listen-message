@@ -24,8 +24,19 @@ const AGENT_NAME = process.env.AGENT_NAME || require('os').hostname();
 const A2A_AGENTS = {
   claude: { bin: 'claude', args: ['-p'] },
   codex: { bin: 'codex', args: ['exec'] },
+  pi: { bin: 'pi', args: ['-p'] },
+  opencode: { bin: 'opencode', args: ['run'] },
 };
-const AGENT = A2A_AGENTS[process.env.A2A_AGENT] || A2A_AGENTS.claude;
+// AGENTSBOX_AGENT is the project's agent (make.nu sets it from --agent / config);
+// it drives both the interactive session and this headless A2A backend. Unknown
+// is a hard error rather than a silent substitution, which masked a missing
+// binary as "claude not found".
+const AGENT = A2A_AGENTS[process.env.AGENTSBOX_AGENT];
+if (!AGENT) {
+  const known = Object.keys(A2A_AGENTS).join(', ');
+  console.error(`AGENTSBOX_AGENT='${process.env.AGENTSBOX_AGENT}' has no headless runner (expected one of: ${known})`);
+  process.exit(1);
+}
 const AGENT_BIN = AGENT.bin;
 const AGENT_ARGS = AGENT.args;
 const TIMEOUT_MS = parseInt(process.env.A2A_TIMEOUT_MS || '240000', 10);

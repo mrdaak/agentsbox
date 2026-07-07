@@ -184,7 +184,6 @@ export def "main run" [
     --workdir: string                 # host project dir mounted at /workspace
     --auth                            # bind host port 1455:1455 for OpenCode auth
     --a2a                             # join agentsbox-net and start the A2A listener
-    --a2a-agent: string = "claude"    # headless agent answering A2A messages
     --agent-name: string              # A2A alias (default: workdir basename)
     --agent: string = ""              # interactive agent to auto-launch in the session (claude/codex/opencode)
     --web                             # serve Zellij's web client on --web-port
@@ -246,17 +245,24 @@ export def "main run" [
         $run_args = ($run_args | append ["-p" $"($web_bind):($web_port):8082" "-e" "WEB_ENABLED=1" "-e" $"WEB_PORT=($web_port)" "-e" $"WEB_HOST=($url_host)"])
     }
     if $a2a {
+        # A2A backs onto the same agent as the session (--agent / AGENTSBOX_AGENT).
+        # bin/agentsbox resolves one before reaching here; none set is an error,
+        # not a guess — an unconfigured agent would fail every request.
+        if ($agent | is-empty) or $agent == "none" {
+            print -e "agentsbox: --a2a requires --agent (or a configured 'agent' in config); aborting"
+            exit 1
+        }
         $run_args = ($run_args | append [
             --network agentsbox-net
             --network-alias $name
             -e A2A_ENABLED=1
-            -e $"A2A_AGENT=($a2a_agent)"
         ])
     }
     if $network != "" {
         $run_args = ($run_args | append ["--network" $network])
     }
-    # The entrypoint reads AGENTSBOX_AGENT to open the session straight into this agent.
+    # The entrypoint reads AGENTSBOX_AGENT to open the session straight into
+    # this agent; listen-message reads it too as the A2A backend.
     if ($agent | is-not-empty) and $agent != "none" {
         $run_args = ($run_args | append ["-e" $"AGENTSBOX_AGENT=($agent)"])
     }
@@ -314,6 +320,21 @@ export def "main select-agents" [] {
         }
         print -e "Select at least one agent."
     }
+}
+
+## Pick one installed agent to back A2A (single-select). Called by bin/agentsbox
+## only when --a2a is set and no agent resolved from flag/config. The installed
+## set arrives one-per-line in AGENTSBOX_A2A_CHOICES (env transport, same pattern
+## as AGENTSBOX_VOLUMES) so the choice is constrained to agents baked into the
+## image. Prints the chosen agent on success; ESC/Ctrl-C cancels (exits non-zero,
+## no output). The caller persists the pick so it never re-prompts.
+export def "main select-a2a-agent" [] {
+    let choices = ($env.AGENTSBOX_A2A_CHOICES? | default "" | lines | where $it != "")
+    if ($choices | is-empty) { exit 1 }
+    let p = "No agent configured for this project. A2A needs one — select an installed agent (Enter=confirm, Esc=cancel):"
+    let r = ($choices | input list $p)
+    if ($r | is-empty) { exit 1 }
+    print $r
 }
 
 export def main [] {

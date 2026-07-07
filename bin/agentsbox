@@ -130,7 +130,7 @@ Options for 'enter':
                  tailscale (the host's tailnet IP), or an explicit address
   --a2a          Enable agent-to-agent messaging (start the A2A listener and
                  join the shared agentsbox-net network). Incoming messages are
-                 answered by the same agent the session runs (see --agent).
+                 answered by this project's agent (see --agent).
   --name NAME    A2A agent alias other agents address (default: dir basename)
   --agent NAME   Auto-launch this agent in the session instead of a plain shell
                  (e.g. claude, codex, opencode). 'none' forces a plain shell.
@@ -267,6 +267,31 @@ cmd_enter() {
         fi
     fi
 
+    # --a2a needs a headless agent; if none resolved (or it's "none"), pick one
+    # from the installed set and persist it, or fail. Never guess silently — an
+    # unconfigured agent would fail every request.
+    if [[ -n "$a2a" && ( -z "$launch_agent" || "$launch_agent" == "none" ) ]]; then
+        # Re-read in case the first-run wizard above just wrote the key; absent
+        # means all four (matches packages.nix's default).
+        local installed_now=""
+        [[ -f "$global_conf" ]] && installed_now="$(config_installed_agents "$global_conf")"
+        local a2a_choices="${installed_now:-$VALID_AGENTS}"
+        if [[ -t 0 ]]; then
+            local chosen
+            chosen="$(AGENTSBOX_A2A_CHOICES="$a2a_choices" nu "$SCRIPT_DIR/make.nu" select-a2a-agent)" || {
+                echo "enter: --a2a requires a configured agent (none set). Set one with 'agentsbox config agent <name>' or pass --agent <name>." >&2
+                exit 1
+            }
+            is_valid_agent "$chosen" || { echo "enter: invalid agent '$chosen'" >&2; exit 1; }
+            set_toml_key "$config" agent "$chosen"
+            launch_agent="$chosen"
+            echo "agentsbox: saved agent '$chosen' to $config"
+        else
+            echo "enter: --a2a requires a configured agent (none set). Set one with 'agentsbox config agent <name>' or pass --agent <name>." >&2
+            exit 1
+        fi
+    fi
+
     # A project can ship its own A2A server at .agentsbox/listen (e.g. a wiki).
     # If the user didn't pass --a2a, offer to serve it — but only interactively,
     # so joining the shared mesh stays a conscious choice (the file is boot code
@@ -288,10 +313,9 @@ cmd_enter() {
             || podman network create agentsbox-net >/dev/null
     fi
 
-    # A2A answers with the same agent the session runs (claude/codex are wired
-    # into the listener; anything else falls back to claude there).
+    # A2A answers with this project's agent; --agent is guaranteed non-empty
+    # and != "none" whenever --a2a is set (resolved above).
     local run_args=(run --workdir "$workdir" --agent-name "$agent_name")
-    [[ -n "$launch_agent" ]] && run_args+=(--a2a-agent "$launch_agent")
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
     [[ -n "$launch_agent" && "$launch_agent" != "none" ]] && run_args+=(--agent "$launch_agent")
