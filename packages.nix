@@ -24,14 +24,14 @@ let
   claude-code = (import ./claude-code.nix { inherit pkgs; }).claude-code;
   codex = (import ./codex.nix { inherit pkgs; }).codex;
   pi-coding-agent = (import ./pi.nix { inherit pkgs; }).pi-coding-agent;
+  opencode = (import ./opencode.nix { inherit pkgs; }).opencode;
 
-  # The four agents. opencode is a nixpkgs entry (not a pinned file), gated the
-  # same way as the three pinned derivations so the selection is uniform.
+  # The four agents, each pinned to a specific release via its own .nix file.
   selectedAgents =
     (pkgs.lib.optionals (has "claude") [ claude-code ])
     ++ (pkgs.lib.optionals (has "codex") [ codex ])
     ++ (pkgs.lib.optionals (has "pi") [ pi-coding-agent ])
-    ++ (pkgs.lib.optionals (has "opencode") [ pkgs.opencode ]);
+    ++ (pkgs.lib.optionals (has "opencode") [ opencode ]);
 in
 pkgs.buildEnv {
   name = "agents-tools";

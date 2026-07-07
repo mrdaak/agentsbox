@@ -8,7 +8,7 @@ RUN printf 'experimental-features = nix-command flakes\nbuild-users-group =\n' >
 # --priority resolves collisions against packages already present in the base image's profile.
 # AGENTSBOX_INSTALLED_AGENTS selects which agents to bake in (empty default => all four).
 ARG AGENTSBOX_INSTALLED_AGENTS=
-COPY packages.nix claude-code.nix codex.nix pi.nix /tmp/nix/
+COPY packages.nix claude-code.nix codex.nix opencode.nix pi.nix /tmp/nix/
 RUN echo "$AGENTSBOX_INSTALLED_AGENTS" \
  && nix profile add --priority 4 -f /tmp/nix/packages.nix \
  && nix-collect-garbage -d \
