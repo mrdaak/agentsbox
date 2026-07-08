@@ -29,6 +29,14 @@ nix profile install github:mrdaak/agentsbox
 
 Now you can run `agentsbox` from any project directory. If anything goes wrong, start with `agentsbox doctor`.
 
+## Upgrade
+
+Update the `agentsbox` command to the latest published version:
+
+```bash
+nix profile upgrade agentsbox
+```
+
 ## Commands
 
 | Command                        | Description                                                                       |
