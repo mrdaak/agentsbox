@@ -7,8 +7,12 @@
 # build-arg (see Containerfile / make.nu). It is a whitespace/newline-separated
 # list drawn from {claude, codex, pi, opencode}; empty/unset => all four
 # (backward-compatible). Validation lives in make.nu; this file trusts its input.
+#
+# nixpkgs is pinned to a specific commit (not the moving nixos-26.05 branch) so
+# the container build layer is reproducible and its podman cache key stays stable
 { pkgs ? import (builtins.fetchTarball {
-url = "https://github.com/NixOS/nixpkgs/archive/nixos-26.05.tar.gz";
+  url = "https://github.com/NixOS/nixpkgs/archive/0ad6f47ea4fe188f4bc8f0380f93ae8523337c6c.tar.gz";
+  sha256 = "sha256-0xIy4dVLqq47rA+mRy0hXDfjhQd4E5PoIns/RmB7nR4=";
   }) { config.allowUnfree = true; }
 }:
 
