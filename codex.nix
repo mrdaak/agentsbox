@@ -3,7 +3,7 @@
 { pkgs ? import <nixpkgs> { } }:
 
 let
-  version = "0.142.2";
+  version = "0.144.4";
 
   target = {
     aarch64-linux = "aarch64-unknown-linux-musl";
@@ -13,10 +13,10 @@ let
   }.${pkgs.stdenv.hostPlatform.system};
 
   sha256 = {
-    aarch64-linux = "sha256-qIk3Lzn7PexuOfIjM5aFoBHTm7XEmoFHDUKbh23IZJM=";
-    x86_64-linux = "sha256-EskAXId46fdiOxe3fzy/VugFmAmsaAJ7NWDBqBOapOI=";
-    aarch64-darwin = "sha256-JkwVpjFGF22wMUxUcoQ3yXsRIbsmF8QmwGkl1itEVLM=";
-    x86_64-darwin = "sha256-KU6BDnVKXGh7Cedr84YjjJ75/LWFI1S+wGPn+n1A1aU=";
+    aarch64-linux = "sha256-TQckPvSuZ4a4syHXrqP5vk4dLFl65UB+fBuYczNAgrI=";
+    x86_64-linux = "sha256-N8mFvp2J6MT0OzqgWUwSE+rCEtMK4rlSIfCP7IB1FdE=";
+    aarch64-darwin = "sha256-d8iWmkgTAvnbHZ6ipsIcCDq64/Go/Ipyddw4MjaZOR4=";
+    x86_64-darwin = "sha256-J06kkxJGYh1HetYdYeozA1J4eOd/qRAIffUhU/XmGI4=";
   }.${pkgs.stdenv.hostPlatform.system};
 
   codex = pkgs.stdenv.mkDerivation (finalAttrs: {

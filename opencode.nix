@@ -3,16 +3,16 @@
 { pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
 
 let
-  version = "1.17.12";
+  version = "1.17.20";
 
   src = pkgs.fetchFromGitHub {
     owner = "anomalyco";
     repo = "opencode";
     tag = "v${version}";
-    hash = "sha256-eM+K/JrSjM5OtDLvPAXLQQx45K15rCxkac+HA8nq5gw=";
+    hash = "sha256-gHfkwCi6Kjn5ppsuyhyM2vyaLmAoNdWth6Xz4LaV7Hk=";
   };
 
-  nodeModulesHash = "sha256-bHEJKhmaqPO4+H3x7lNBxU/9dMd354bJ1hg7wakHXJQ=";
+  nodeModulesHash = "sha256-3NAzmlzVBcLSRXxpNOyW5DKfD1i2HReST2jlKgrtOKc=";
 
   opencode = pkgs.opencode.overrideAttrs (old: {
     inherit version src;

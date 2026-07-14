@@ -3,7 +3,7 @@
 { pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
 
 let
-  version = "2.1.193";
+  version = "2.1.209";
 
   platformKey = {
     aarch64-linux = "linux-arm64";
@@ -13,10 +13,10 @@ let
   }.${pkgs.stdenv.hostPlatform.system};
 
   sha256 = {
-    aarch64-linux = "sha256-OUVM5i55XutIcagfZFPNqW6Sbi25pN1B0OwbYLAVNEg=";
-    x86_64-linux = "sha256-yfBNkp8YvZoQHziX8n3k4eDxXr6EANSq8CmD1z3Wax0=";
-    aarch64-darwin = "sha256-91E6MDha2QGcI3Im/W7EZQizBi6+/Kiu2+OX0RGoGP8=";
-    x86_64-darwin = "sha256-y6XDvcqKtfjnWQQGcC1Bj2EU2bOfSPFodmgOiBq/Hug=";
+    aarch64-linux = "sha256-J4y2jvchfPzFyUnSVzu45ZqLEwX3Zon7qI63IrDZ4vA=";
+    x86_64-linux = "sha256-uIL0uLJ3cviXVA31DyQAAgb0OpQm6PfRm9BllZtp6d0=";
+    aarch64-darwin = "sha256-WdLef0nbL3XVwzu7Rqa48oitJNQLYeMGAqUCu33cOAw=";
+    x86_64-darwin = "sha256-TMP0S5BdRb0nptuTBuxt6Siup1hTcgUymFGuR48vosY=";
   }.${pkgs.stdenv.hostPlatform.system};
 
   claude-code = pkgs.claude-code.overrideAttrs (old: {
