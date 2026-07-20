@@ -41,8 +41,8 @@ config_value() {
         2>/dev/null || true
 }
 
-# Read the [[volumes]] array from .agentsbox/config.toml, emit one `name<TAB>target`
-# line per entry (parses, never sources). Validation and agent-<hash>-<name>
+# Read the [[volumes]] array from a config TOML (project or global), emit one
+# `name<TAB>target` line per entry (parses, never sources). Validation and
 # namespacing happen in make.nu, where the project hash lives.
 config_volumes() {
     local file="$1"
@@ -157,6 +157,11 @@ Options for 'enter':
       name   = "go-cache"
       target = "/root/go"
 
+  The same [[volumes]] syntax in ~/.config/agentsbox.toml declares GLOBAL
+  volumes (namespaced agent-global-<name>), mounted in every project's session —
+  handy for persisting a tool's login/config across projects, e.g. a cursor-cli
+  login cached at /root/.cursor. On a shared target the project mount wins.
+
 Options for 'secrets add' (agentsbox secrets add <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
@@ -202,15 +207,16 @@ cmd_enter() {
     # — that stays the user's explicit choice.
     local config="$workdir/.agentsbox/config.toml"
     local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
-    # Declared [[volumes]] (name<TAB>target per line); validated and mounted by
-    # make.nu, which namespaces them as agent-<hash>-<name>.
-    local volumes=""
+    # Declared [[volumes]] (name<TAB>target per line) from project and global
+    # config; validated/mounted/namespaced by make.nu.
+    local volumes="" global_volumes=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
         volumes="$(config_volumes "$config")"
         # network: CLI flag wins, else project config, else global config.
         [[ -n "$network_set" ]] || network="$(config_value "$config" network)"
     fi
+    global_volumes="$(config_volumes "$global_conf")"
     # CLI flag and project config already fill $network; only fall back to the
     # global config when both were empty (project beats global, per the AGENTS.md
     # precedence rule). Guarding on $network (not $network_set) preserves a
@@ -319,16 +325,25 @@ cmd_enter() {
     [[ -n "$auth" ]] && run_args+=(--auth)
     [[ -n "$a2a" ]] && run_args+=(--a2a)
     [[ -n "$launch_agent" && "$launch_agent" != "none" ]] && run_args+=(--agent "$launch_agent")
-    # Pass [[volumes]] to make.nu via AGENTSBOX_VOLUMES (one `name:target` per line) —
-    # nushell list flags don't accept repeated values, so an env var is the transport.
+    # Pass [[volumes]] to make.nu via AGENTSBOX_VOLUMES (project) and
+    # AGENTSBOX_GLOBAL_VOLUMES (global) — one `name:target` per line each.
+    # Nushell list flags don't accept repeated values, so env vars are the transport.
     local agentsbox_volumes=""
     if [[ -n "$volumes" ]]; then
         while IFS=$'\t' read -r vname vtarget; do
-            [[ -n "$vname" && -n "$vtarget" ]] || { echo "enter: malformed volume in .agentsbox/config.toml (expected name + target)" >&2; exit 1; }
+            [[ -n "$vname" && -n "$vtarget" ]] || { echo "enter: malformed volume in $config (expected name + target)" >&2; exit 1; }
             agentsbox_volumes+="${vname}:${vtarget}"$'\n'
         done <<< "$volumes"
     fi
+    local agentsbox_global_volumes=""
+    if [[ -n "$global_volumes" ]]; then
+        while IFS=$'\t' read -r vname vtarget; do
+            [[ -n "$vname" && -n "$vtarget" ]] || { echo "enter: malformed volume in $global_conf (expected name + target)" >&2; exit 1; }
+            agentsbox_global_volumes+="${vname}:${vtarget}"$'\n'
+        done <<< "$global_volumes"
+    fi
     export AGENTSBOX_VOLUMES="$agentsbox_volumes"
+    export AGENTSBOX_GLOBAL_VOLUMES="$agentsbox_global_volumes"
     # `network` is a single scalar, so it rides a sibling env var (same transport
     # pattern as AGENTSBOX_VOLUMES) into make.nu, which appends it as --network.
     export AGENTSBOX_NETWORK="$network"

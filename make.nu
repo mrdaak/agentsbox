@@ -82,20 +82,18 @@ def built-in-mounts [] {
       /root/.pi/agent /root/.config/opencode /root/.local/share/opencode ]
 }
 
-# -v flags for project-declared [[volumes]] (each entry "name:target"). Namespaced
-# agent-<hash>-<name> (like secrets) so projects can't collide, created lazily so a
-# fresh checkout just works on first `enter`, mounted with :Z for SELinux. Name
-# shape, absolute target, and collisions with built-in mounts are hard errors — a
-# typo shouldn't silently drop a mount the user expects.
-def volume-flags [hash: string, entries: list] {
-    if ($entries | is-empty) { return [] }
-    let existing = (do -i { podman volume ls --format '{{.Name}}' } | default "" | lines)
+# -v flags for declared [[volumes]] (each entry "name:target"). Project entries
+# are prefixed agent-<hash>-<name>, globals agent-global-<name> (mirroring
+# secret-flags); both are created lazily and mounted with :Z. Project wins on a
+# shared target (podman rejects two mounts at one path). Name shape, absolute
+# target, and built-in-mount collisions are hard errors.
+def volume-flags [hash: string, project_entries: list, global_entries: list] {
     let mounts = (built-in-mounts)
-    $entries
-    | each {|entry|
+    let existing = (do -i { podman volume ls --format '{{.Name}}' } | default "" | lines)
+    let parse = {|entry, prefix|
         let parts = ($entry | split row ":")
         if ($parts | length) != 2 {
-            error make {msg: $"agentsbox: malformed volume '($entry)' (expected name:target)"}
+            error make {msg: $"agentsbox: malformed volume '($entry)' \(expected name:target)"}
         }
         let name = ($parts | first)
         let target = ($parts | last)
@@ -103,7 +101,7 @@ def volume-flags [hash: string, entries: list] {
             error make {msg: $"agentsbox: volume entry '($entry)' has an empty name"}
         }
         if not ($name =~ '^[A-Za-z0-9_.-]+$') {
-            error make {msg: $"agentsbox: invalid volume name '($name)' (allowed: A-Z a-z 0-9 _ . -)"}
+            error make {msg: $"agentsbox: invalid volume name '($name)' \(allowed: A-Z a-z 0-9 _ . -)"}
         }
         if ($target | is-empty) or not ($target | str starts-with "/") {
             error make {msg: $"agentsbox: volume target '($target)' must be an absolute path"}
@@ -111,12 +109,23 @@ def volume-flags [hash: string, entries: list] {
         if ($target in $mounts) {
             error make {msg: $"agentsbox: volume target '($target)' collides with a built-in mount"}
         }
-        let effective = $"agent-($hash)-($name)"
-        if ($effective not-in $existing) {
-            podman volume create $effective out+err>| ignore
-        }
-        ["-v" $"($effective):($target):Z"]
+        {target: $target, effective: $"($prefix)($name)"}
     }
+    let parsed = (
+        ($project_entries | each {|e| do $parse $e $"agent-($hash)-"})
+        ++ ($global_entries | each {|e| do $parse $e "agent-global-"})
+    )
+    if ($parsed | is-empty) { return [] }
+    # Create every declared volume, including ones shadowed on this run — they
+    # still mount in projects that don't shadow them.
+    $parsed | each {|v|
+        if ($v.effective not-in $existing) {
+            podman volume create $v.effective out+err>| ignore
+        }
+    } | ignore
+    $parsed
+    | uniq-by target
+    | each {|v| ["-v" $"($v.effective):($v.target):Z"] }
     | flatten
 }
 
@@ -278,11 +287,12 @@ export def "main run" [
         -v $"($workdir):/workspace:Z"
     ])
     $run_args = ($run_args | append (secret-flags $hash))
-    # [[volumes]] arrive via AGENTSBOX_VOLUMES (one `name:target` per line) from
-    # bin/agentsbox — nushell list flags don't accept repeated values, so an env
-    # var is the transport.
-    let vol_entries = ($env.AGENTSBOX_VOLUMES? | default "" | lines | where $it != "")
-    $run_args = ($run_args | append (volume-flags $hash $vol_entries))
+    # [[volumes]] arrive via AGENTSBOX_VOLUMES (project) and AGENTSBOX_GLOBAL_VOLUMES
+    # (global) from bin/agentsbox — nushell list flags don't accept repeated values,
+    # so env vars are the transport.
+    let project_volumes = ($env.AGENTSBOX_VOLUMES? | default "" | lines | where $it != "")
+    let global_volumes = ($env.AGENTSBOX_GLOBAL_VOLUMES? | default "" | lines | where $it != "")
+    $run_args = ($run_args | append (volume-flags $hash $project_volumes $global_volumes))
     $run_args = ($run_args | append $"($IMAGE_NAME):(image-tag)")
 
     podman run ...$run_args

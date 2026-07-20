@@ -55,10 +55,14 @@ make edits carefully and defer build/run verification to a host shell.
   and `--web` port publishing are skipped (Podman rejects them).
 - **`[[volumes]]` validation:** `name` matches `^[A-Za-z0-9_.-]+$`; `target` is
   absolute and must not collide with a built-in mount (`/workspace`, `/nix`,
-  `/root/.claude`, …). Malformed entries are hard errors.
+  `/root/.claude`, …). Malformed entries are hard errors. Read from both
+  `.agentsbox/config.toml` (project, prefixed `agent-<hash>-<name>`) and
+  `~/.config/agentsbox.toml` (global, prefixed `agent-global-<name>`); on a shared
+  target the project mount wins (mirrors secrets).
 - **Nushell list-typed flags** (`--foo: list<string>`) take a single `[a,b]`
   value, not repeated `--foo a --foo b`. Pass variable-length lists from Bash via
-  env vars (one entry per line) — see `AGENTSBOX_VOLUMES`.
+  env vars (one entry per line) — see `AGENTSBOX_VOLUMES` /
+  `AGENTSBOX_GLOBAL_VOLUMES`.
 - **`default (expr)` is eager** — use an `if` when the fallback has side effects.
 - **Non-zero externals abort nushell** — wrap in `try { … } catch { … }` to
   convert to a custom message/exit.
