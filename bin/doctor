@@ -1,5 +1,9 @@
 #!/usr/bin/env nu
 
+# Hardcoded (matches the README install ref) — the check must not depend on git
+# metadata being present on the host.
+const GITHUB_REPO = "mrdaak/agentsbox"
+
 def has-cmd [name: string] {
     (which $name | length) > 0
 }
@@ -7,6 +11,18 @@ def has-cmd [name: string] {
 def pass [msg: string] { { status: "pass", msg: $msg, fix: "" } }
 def fail-check [msg: string, fix: string] { { status: "fail", msg: $msg, fix: $fix } }
 def warn-check [msg: string, fix: string] { { status: "warn", msg: $msg, fix: $fix } }
+
+# Tags carry a 'v' prefix; flake.nix's `version` is bare — both parse here so
+# check-version compares apples to apples.
+def semver [name: string] {
+    let s = (if ($name | str starts-with "v") { $name | str substring 1.. } else { $name })
+    let parts = ($s | split row ".")
+    if ($parts | length) != 3 { return null }
+    let nums = ($parts | each {|p| try { $p | into int } catch { null }})
+    if ($nums | length) != 3 { return null }
+    if ($nums | any {|n| $n == null }) { return null }
+    {major: ($nums | get 0), minor: ($nums | get 1), patch: ($nums | get 2)}
+}
 
 def check-nix [] {
     if not (has-cmd "nix") {
@@ -86,6 +102,64 @@ def check-image [] {
     }
 }
 
+# `warn`, not `fail`: doctor must stay usable offline and must not block
+# `enter`, which gates on doctor's fail count — so network/parse failures
+# degrade to a soft warn too.
+def check-version [] {
+    let installed = ($env.AGENTSBOX_VERSION? | default "" | str trim)
+    # "latest"/unset => raw `nu make.nu doctor` or a dev shell without the
+    # wrapper; no reliable installed version, so skip rather than warn.
+    if $installed == "" or $installed == "latest" {
+        return []
+    }
+
+    let tags = (try {
+        http get $"https://api.github.com/repos/($GITHUB_REPO)/tags"
+    } catch {
+        null
+    })
+    # null => network/http failure OR a non-list body (e.g. a GitHub rate-limit
+    # record); the `get name` below would throw on the latter, so wrap it too.
+    if $tags == null {
+        return [(warn-check "couldn't check for updates (GitHub unreachable)" "nix profile upgrade agentsbox")]
+    }
+    let versions = (try {
+        $tags | get name | each {|n| semver $n } | where $it != null
+    } catch {
+        null
+    })
+    if $versions == null {
+        return [(warn-check "couldn't check for updates (GitHub unreachable)" "nix profile upgrade agentsbox")]
+    }
+    if ($versions | is-empty) {
+        return [(pass $"agentsbox ($installed) installed \(no release tags yet\)")]
+    }
+
+    let latest = ($versions | sort-by major minor patch | last)
+    let inst = (semver $installed)
+    if $inst == null {
+        return [(warn-check $"agentsbox ($installed) installed \(unparseable version\)" "nix profile upgrade agentsbox")]
+    }
+
+    let cmp = (
+        if $inst.major < $latest.major { -1 }
+        else if $inst.major > $latest.major { 1 }
+        else if $inst.minor < $latest.minor { -1 }
+        else if $inst.minor > $latest.minor { 1 }
+        else if $inst.patch < $latest.patch { -1 }
+        else if $inst.patch > $latest.patch { 1 }
+        else { 0 }
+    )
+    let lv = $"v($latest.major).($latest.minor).($latest.patch)"
+    if $cmp == 0 {
+        [(pass $"agentsbox up to date \(($lv)\)")]
+    } else if $cmp < 0 {
+        [(warn-check $"agentsbox ($lv) available \(installed ($installed)\)" "nix profile upgrade agentsbox")]
+    } else {
+        [(pass $"agentsbox ($installed) installed \(ahead of latest tag ($lv)\)")]
+    }
+}
+
 def main [] {
     print "Checking environment..."
     print ""
@@ -94,6 +168,7 @@ def main [] {
         (check-nix)
         (check-podman)
         (check-image)
+        (check-version)
     ] | flatten
 
     for r in $results {
