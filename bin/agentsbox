@@ -59,7 +59,7 @@ config_ports() {
     local file="$1"
     [[ -f "$file" ]] || return 0
     CFG_FILE="$file" nu -c \
-        'try { open $env.CFG_FILE | get ports? | default [] | each { |p| $("($p.host? | default "")\t($p.container? | default "")\t($p.bind? | default "")" } | to text } catch { "" }' \
+        'try { open $env.CFG_FILE | get ports? | default [] | each { |p| $"($p.host? | default "")\t($p.container? | default "")\t($p.bind? | default "")" } | to text } catch { "" }' \
         2>/dev/null || true
 }
 
