@@ -564,6 +564,10 @@ cmd_install_skills() {
         local name
         name="$(basename "$skill")"
 
+        # A prior install may have been left read-only (dir 555 / file 444) by an
+        # external process; cp -R then can't overwrite it and the re-install silently
+        # stalls. Restore owner-write first so the copy always succeeds.
+        [[ -d "$store/$name" ]] && chmod -R u+w "$store/$name"
         # Copy overwrites existing files in place; ln -sfn replaces the symlink.
         # No removal needed — a re-install just updates what's there.
         cp -R "${skill%/}" "$store/"
