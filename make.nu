@@ -129,6 +129,33 @@ def volume-flags [hash: string, project_entries: list, global_entries: list] {
     | flatten
 }
 
+# -p flags for declared [[ports]] (each entry "host:container:bind", project-only —
+# no global equivalent, host ports are scarce and not shareable like volumes).
+# bind defaults to loopback (127.0.0.1). Skipped under host/container: networks
+# where podman rejects -p (mirrors --auth/--web); main run gates on no_publish.
+def port-flags [entries: list] {
+    if ($entries | is-empty) { return [] }
+    $entries
+    | each {|e|
+        let parts = ($e | split row ":")
+        if ($parts | length) != 3 {
+            error make {msg: $"agentsbox: malformed port '($e)' \(expected host:container:bind)"}
+        }
+        let host = ($parts | first)
+        let container = ($parts | get 1)
+        let bind = ($parts | last)
+        if not ($host =~ '^[0-9]+$') {
+            error make {msg: $"agentsbox: port host '($host)' must be a number \(in '($e)')"}
+        }
+        if not ($container =~ '^[0-9]+$') {
+            error make {msg: $"agentsbox: port container '($container)' must be a number \(in '($e)')"}
+        }
+        let b = (if ($bind | is-empty) { "127.0.0.1" } else { $bind })
+        ["-p" $"($b):($host):($container)"]
+    }
+    | flatten
+}
+
 # Confirm podman is on PATH before reaching `podman build`, which would otherwise
 # abort with only an (empty) build-log pointer. Direct `nu make.nu` invocations
 # bypass bin/agentsbox's own require_podman guard, so this is the last line of defense.
@@ -231,8 +258,9 @@ export def "main run" [
 
     let network = ($env.AGENTSBOX_NETWORK? | default "" | str trim)
     let no_publish = ($network == "host" or ($network | str starts-with "container:"))
-    if $no_publish and ($auth or $web) {
-        print -e $"agentsbox: --network '($network)' can't publish ports; ignoring --auth/--web"
+    let project_ports = ($env.AGENTSBOX_PORTS? | default "" | lines | where $it != "")
+    if $no_publish and ($auth or $web or ($project_ports | is-not-empty)) {
+        print -e $"agentsbox: --network '($network)' can't publish ports; ignoring --auth/--web/[[ports]]"
     }
     if $network != "" and $a2a {
         print -e $"agentsbox: --network '($network)' is incompatible with --a2a, which requires agentsbox-net; aborting"
@@ -293,6 +321,9 @@ export def "main run" [
     let project_volumes = ($env.AGENTSBOX_VOLUMES? | default "" | lines | where $it != "")
     let global_volumes = ($env.AGENTSBOX_GLOBAL_VOLUMES? | default "" | lines | where $it != "")
     $run_args = ($run_args | append (volume-flags $hash $project_volumes $global_volumes))
+    if not $no_publish {
+        $run_args = ($run_args | append (port-flags $project_ports))
+    }
     $run_args = ($run_args | append $"($IMAGE_NAME):(image-tag)")
 
     podman run ...$run_args

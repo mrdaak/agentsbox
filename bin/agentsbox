@@ -52,6 +52,17 @@ config_volumes() {
         2>/dev/null || true
 }
 
+# Read the [[ports]] array from a config TOML, emit one `host<TAB>container<TAB>bind`
+# line per entry (parses, never sourced). Validation/defaulting is in make.nu.
+# Project-only — no global ports (host ports are scarce, not shareable).
+config_ports() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" nu -c \
+        'try { open $env.CFG_FILE | get ports? | default [] | each { |p| $("($p.host? | default "")\t($p.container? | default "")\t($p.bind? | default "")" } | to text } catch { "" }' \
+        2>/dev/null || true
+}
+
 # Fixed set of agents that can be baked into the image (installed_agents).
 # Single source of truth — is_valid_agent and the error messages both read it.
 VALID_AGENTS="claude codex pi opencode"
@@ -162,6 +173,20 @@ Options for 'enter':
   handy for persisting a tool's login/config across projects, e.g. a cursor-cli
   login cached at /root/.cursor. On a shared target the project mount wins.
 
+  A project may declare published ports in .agentsbox/config.toml via a
+  [[ports]] array-of-tables (fields: host, container, bind). On enter each maps
+  to a podman -p <bind>:<host>:<container>, so a service the agent runs is
+  reachable on your host (loopback by default):
+
+      [[ports]]
+      host      = 8001
+      container = 8001
+      bind      = "127.0.0.1"
+
+  bind defaults to 127.0.0.1; "0.0.0.0" widens to the LAN. Project-only — no
+  global equivalent. Skipped under network = "host" / container: (podman can't
+  publish there).
+
 Options for 'secrets add' (agentsbox secrets add <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
@@ -209,10 +234,11 @@ cmd_enter() {
     local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
     # Declared [[volumes]] (name<TAB>target per line) from project and global
     # config; validated/mounted/namespaced by make.nu.
-    local volumes="" global_volumes=""
+    local volumes="" global_volumes="" ports=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
         volumes="$(config_volumes "$config")"
+        ports="$(config_ports "$config")"
         # network: CLI flag wins, else project config, else global config.
         [[ -n "$network_set" ]] || network="$(config_value "$config" network)"
     fi
@@ -342,8 +368,19 @@ cmd_enter() {
             agentsbox_global_volumes+="${vname}:${vtarget}"$'\n'
         done <<< "$global_volumes"
     fi
+    # [[ports]] arrive via AGENTSBOX_PORTS (project-only — no global equivalent;
+    # host ports are scarce, not shareable like volumes). Same env-var transport
+    # as AGENTSBOX_VOLUMES: one `host:container:bind` per line.
+    local agentsbox_ports=""
+    if [[ -n "$ports" ]]; then
+        while IFS=$'\t' read -r phost pcontainer pbind; do
+            [[ -n "$phost" && -n "$pcontainer" ]] || { echo "enter: malformed port in $config (expected host + container)" >&2; exit 1; }
+            agentsbox_ports+="${phost}:${pcontainer}:${pbind}"$'\n'
+        done <<< "$ports"
+    fi
     export AGENTSBOX_VOLUMES="$agentsbox_volumes"
     export AGENTSBOX_GLOBAL_VOLUMES="$agentsbox_global_volumes"
+    export AGENTSBOX_PORTS="$agentsbox_ports"
     # `network` is a single scalar, so it rides a sibling env var (same transport
     # pattern as AGENTSBOX_VOLUMES) into make.nu, which appends it as --network.
     export AGENTSBOX_NETWORK="$network"
