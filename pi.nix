@@ -3,10 +3,10 @@
 { pkgs ? import <nixpkgs> { } }:
 
 let
-  version = "0.80.6";
+  version = "0.83.0";
 
-  srcHash = "sha256-e/wcHruEcBAHDF5tKvwew7LXjVp0eraHh2k+QaL2sCA=";
-  npmDepsHash = "sha256-xXEOR0epZcfbXayYGyJdBiFVliamBexqA+1Sd7wlGhU=";
+  srcHash = "sha256-+XRJua2TSXkZMnWtxtLMskSzEHrGEFFyvYcPATi7An4=";
+  npmDepsHash = "sha256-AbSfP1Ion8bN309NUBQb1QSn2cIIUjNONmZgls9vnYE=";
 
   src = pkgs.fetchFromGitHub {
     owner = "earendil-works";
