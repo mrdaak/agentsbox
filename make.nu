@@ -73,8 +73,8 @@ def secret-flags [hash: string] {
 }
 
 # In-container paths already bound by built-in mounts (run_args) and secrets —
-# a project-declared volume may not reuse one, since podman rejects two mounts
-# at the same path and we want to fail with a clear message rather than podman's.
+# config-declared mounts may not reuse one, since podman rejects two mounts at
+# the same path and we want to fail with a clear message rather than podman's.
 def built-in-mounts [] {
     [ /workspace /nix /pnpm-store
       /root/.agents /root/.claude /root/.claude.json
@@ -126,6 +126,59 @@ def volume-flags [hash: string, project_entries: list, global_entries: list] {
     $parsed
     | uniq-by target
     | each {|v| ["-v" $"($v.effective):($v.target):Z"] }
+    | flatten
+}
+
+# -v flags for declared [[bind_mounts]] (each entry
+# "source<TAB>target<TAB>readonly"). Project entries come before globals, so
+# uniq-by target gives project bind mounts precedence on shared targets.
+def bind-mount-flags [project_entries: list, global_entries: list] {
+    let mounts = (built-in-mounts)
+    let home = $env.HOME
+    let expand_source = {|source|
+        if $source == "~" {
+            $home
+        } else if ($source | str starts-with "~/") {
+            $"($home)($source | str substring 1..)"
+        } else {
+            $source
+        }
+    }
+    let parse = {|entry|
+        let parts = ($entry | split row (char tab))
+        if ($parts | length) != 3 {
+            error make {msg: $"agentsbox: malformed bind_mount '($entry)' \(expected source<TAB>target<TAB>readonly)"}
+        }
+        let raw_source = ($parts | first)
+        let expanded_source = (do $expand_source $raw_source)
+        let target = ($parts | get 1)
+        let readonly = ($parts | last)
+        if ($raw_source | is-empty) {
+            error make {msg: "agentsbox: bind_mount source must be non-empty"}
+        }
+        if not ($expanded_source | path exists) {
+            error make {msg: $"agentsbox: bind_mount source '($raw_source)' does not exist"}
+        }
+        let source = ($expanded_source | path expand --no-symlink)
+        if ($target | is-empty) or not ($target | str starts-with "/") {
+            error make {msg: $"agentsbox: bind_mount target '($target)' must be an absolute path"}
+        }
+        if ($target in $mounts) {
+            error make {msg: $"agentsbox: bind_mount target '($target)' collides with a built-in mount"}
+        }
+        if ($readonly != "true") and ($readonly != "false") {
+            error make {msg: $"agentsbox: bind_mount readonly for target '($target)' must be true or false"}
+        }
+        let mode = (if $readonly == "true" { "ro,Z" } else { "Z" })
+        {target: $target, flag: $"($source):($target):($mode)"}
+    }
+    let parsed = (
+        ($project_entries | each {|e| do $parse $e})
+        ++ ($global_entries | each {|e| do $parse $e})
+    )
+    $parsed
+    | uniq-by target
+    | each {|m| ["-v" $m.flag] }
     | flatten
 }
 
@@ -321,6 +374,11 @@ export def "main run" [
     let project_volumes = ($env.AGENTSBOX_VOLUMES? | default "" | lines | where $it != "")
     let global_volumes = ($env.AGENTSBOX_GLOBAL_VOLUMES? | default "" | lines | where $it != "")
     $run_args = ($run_args | append (volume-flags $hash $project_volumes $global_volumes))
+    # [[bind_mounts]] share the same project-over-global target precedence as
+    # named volumes, but mount explicit host paths and never create Podman volumes.
+    let project_bind_mounts = ($env.AGENTSBOX_BIND_MOUNTS? | default "" | lines | where $it != "")
+    let global_bind_mounts = ($env.AGENTSBOX_GLOBAL_BIND_MOUNTS? | default "" | lines | where $it != "")
+    $run_args = ($run_args | append (bind-mount-flags $project_bind_mounts $global_bind_mounts))
     if not $no_publish {
         $run_args = ($run_args | append (port-flags $project_ports))
     }

@@ -52,6 +52,17 @@ config_volumes() {
         2>/dev/null || true
 }
 
+# Read the [[bind_mounts]] array from a config TOML (project or global), emit
+# one `source<TAB>target<TAB>readonly` line per entry (parses, never sources).
+# Validation, ~ expansion, and mount precedence happen in make.nu.
+config_bind_mounts() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" nu -c \
+        'try { open $env.CFG_FILE | get bind_mounts? | default [] | each { |b| $"($b.source? | default "")\t($b.target? | default "")\t($b.readonly? | default false | into string)" } | to text } catch { "" }' \
+        2>/dev/null || true
+}
+
 # Read the [[ports]] array from a config TOML, emit one `host<TAB>container<TAB>bind`
 # line per entry (parses, never sourced). Validation/defaulting is in make.nu.
 # Project-only — no global ports (host ports are scarce, not shareable).
@@ -173,6 +184,15 @@ Options for 'enter':
   handy for persisting a tool's login/config across projects, e.g. a cursor-cli
   login cached at /root/.cursor. On a shared target the project mount wins.
 
+  Host paths may be mounted explicitly with [[bind_mounts]] in either project or
+  global config. Project bind mounts win over global bind mounts on the same
+  target. source supports leading ~ expansion and must already exist:
+
+      [[bind_mounts]]
+      source   = "~/.aws"
+      target   = "/root/.aws"
+      readonly = true
+
   A project may declare published ports in .agentsbox/config.toml via a
   [[ports]] array-of-tables (fields: host, container, bind). On enter each maps
   to a podman -p <bind>:<host>:<container>, so a service the agent runs is
@@ -234,15 +254,17 @@ cmd_enter() {
     local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
     # Declared [[volumes]] (name<TAB>target per line) from project and global
     # config; validated/mounted/namespaced by make.nu.
-    local volumes="" global_volumes="" ports=""
+    local volumes="" global_volumes="" bind_mounts="" global_bind_mounts="" ports=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
         volumes="$(config_volumes "$config")"
+        bind_mounts="$(config_bind_mounts "$config")"
         ports="$(config_ports "$config")"
         # network: CLI flag wins, else project config, else global config.
         [[ -n "$network_set" ]] || network="$(config_value "$config" network)"
     fi
     global_volumes="$(config_volumes "$global_conf")"
+    global_bind_mounts="$(config_bind_mounts "$global_conf")"
     # CLI flag and project config already fill $network; only fall back to the
     # global config when both were empty (project beats global, per the AGENTS.md
     # precedence rule). Guarding on $network (not $network_set) preserves a
@@ -368,6 +390,22 @@ cmd_enter() {
             agentsbox_global_volumes+="${vname}:${vtarget}"$'\n'
         done <<< "$global_volumes"
     fi
+    # [[bind_mounts]] use tab-delimited env transport so host paths containing
+    # ":" do not get split like the named volume format.
+    local agentsbox_bind_mounts=""
+    if [[ -n "$bind_mounts" ]]; then
+        while IFS=$'\t' read -r bsource btarget breadonly; do
+            [[ -n "$bsource" && -n "$btarget" ]] || { echo "enter: malformed bind_mount in $config (expected source + target)" >&2; exit 1; }
+            agentsbox_bind_mounts+="${bsource}"$'\t'"${btarget}"$'\t'"${breadonly:-false}"$'\n'
+        done <<< "$bind_mounts"
+    fi
+    local agentsbox_global_bind_mounts=""
+    if [[ -n "$global_bind_mounts" ]]; then
+        while IFS=$'\t' read -r bsource btarget breadonly; do
+            [[ -n "$bsource" && -n "$btarget" ]] || { echo "enter: malformed bind_mount in $global_conf (expected source + target)" >&2; exit 1; }
+            agentsbox_global_bind_mounts+="${bsource}"$'\t'"${btarget}"$'\t'"${breadonly:-false}"$'\n'
+        done <<< "$global_bind_mounts"
+    fi
     # [[ports]] arrive via AGENTSBOX_PORTS (project-only — no global equivalent;
     # host ports are scarce, not shareable like volumes). Same env-var transport
     # as AGENTSBOX_VOLUMES: one `host:container:bind` per line.
@@ -380,6 +418,8 @@ cmd_enter() {
     fi
     export AGENTSBOX_VOLUMES="$agentsbox_volumes"
     export AGENTSBOX_GLOBAL_VOLUMES="$agentsbox_global_volumes"
+    export AGENTSBOX_BIND_MOUNTS="$agentsbox_bind_mounts"
+    export AGENTSBOX_GLOBAL_BIND_MOUNTS="$agentsbox_global_bind_mounts"
     export AGENTSBOX_PORTS="$agentsbox_ports"
     # `network` is a single scalar, so it rides a sibling env var (same transport
     # pattern as AGENTSBOX_VOLUMES) into make.nu, which appends it as --network.
