@@ -10,6 +10,17 @@ SESSION_NAME="$(printf '%s' "${AGENT_NAME:-$(basename "$PWD")}" | tr -c 'A-Za-z0
 NIX_BUILD_FLAGS=(--option build-users-group "")
 NIX_FLAGS=(--extra-experimental-features "nix-command flakes" "${NIX_BUILD_FLAGS[@]}")
 
+# Forward published OAuth callback ports to listeners that intentionally bind
+# only to the container loopback. The started marker survives the nix develop
+# re-exec, so each relay is created only once per container.
+if [ -n "${AGENTSBOX_AUTH_CALLBACK_RELAYS:-}" ] && [ ! -f /tmp/auth-callback-relays.started ]; then
+    touch /tmp/auth-callback-relays.started
+    while IFS=: read -r _auth_host auth_container auth_target _auth_bind; do
+        socat "TCP-LISTEN:${auth_container},bind=0.0.0.0,fork,reuseaddr" "TCP:127.0.0.1:${auth_target}" \
+            >"/tmp/auth-callback-relay-${auth_container}.log" 2>&1 &
+    done <<< "$AGENTSBOX_AUTH_CALLBACK_RELAYS"
+fi
+
 # Start the A2A listener once, before any nix re-exec. The pidfile guards
 # against the double-start that would otherwise happen when this script
 # re-execs itself through `nix develop --command "$0"`. node and the local

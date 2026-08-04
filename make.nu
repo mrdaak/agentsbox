@@ -209,6 +209,67 @@ def port-flags [entries: list] {
     | flatten
 }
 
+# Validate global auth callback relays and emit their loopback-only -p flags.
+# Each entry is host:container:target:bind; the entrypoint forwards container
+# to the loopback-only target with socat after Podman has started the container.
+def auth-callback-relay-flags [entries: list, project_ports: list, web: bool, web_port: int, web_bind: string] {
+    if ($entries | is-empty) {
+        error make {msg: "agentsbox: --auth requires auth_callback_relays in ~/.config/agentsbox.toml"}
+    }
+    let relays = ($entries | each {|e|
+        let parts = ($e | split row ":")
+        if ($parts | length) != 4 {
+            error make {msg: $"agentsbox: malformed auth callback relay '($e)' \(expected host:container:target:bind)"}
+        }
+        let host = ($parts | first)
+        let container = ($parts | get 1)
+        let target = ($parts | get 2)
+        let bind = (if ($parts | last | is-empty) { "127.0.0.1" } else { $parts | last })
+        for port in [$host $container $target] {
+            if not ($port =~ '^[0-9]+$') or (($port | into int) < 1) or (($port | into int) > 65535) {
+                error make {msg: $"agentsbox: auth callback relay ports must be integers from 1 to 65535 \(in '($e)')"}
+            }
+        }
+        if $container == $target {
+            error make {msg: $"agentsbox: auth callback relay container port must differ from target \(in '($e)')"}
+        }
+        {host: $host, container: $container, target: $target, bind: $bind}
+    })
+    let host_keys = ($relays | each {|r| $"($r.bind):($r.host)"})
+    if ($host_keys | uniq | length) != ($host_keys | length) {
+        error make {msg: "agentsbox: auth callback relays duplicate a host bind and port"}
+    }
+    let container_ports = ($relays | get container)
+    if ($container_ports | uniq | length) != ($container_ports | length) {
+        error make {msg: "agentsbox: auth callback relays duplicate a container port"}
+    }
+    let project_container_ports = ($project_ports | each {|p|
+        let parts = ($p | split row ":")
+        if ($parts | length) == 3 { $parts | get 1 } else { "" }
+    })
+    if ($container_ports | any {|p| $p in $project_container_ports }) {
+        error make {msg: "agentsbox: auth callback relay container port conflicts with [[ports]]"}
+    }
+    let project_host_keys = ($project_ports | each {|p|
+        let parts = ($p | split row ":")
+        if ($parts | length) == 3 {
+            let bind = (if ($parts | last | is-empty) { "127.0.0.1" } else { $parts | last })
+            $"($bind):($parts | first)"
+        } else { "" }
+    })
+    if ($host_keys | any {|p| $p in $project_host_keys }) {
+        error make {msg: "agentsbox: auth callback relay host bind and port conflicts with [[ports]]"}
+    }
+    if $web and ($container_ports | any {|p| $p == "8082" }) {
+        error make {msg: "agentsbox: auth callback relay container port 8082 conflicts with --web"}
+    }
+    let web_host_key = $"($web_bind):($web_port)"
+    if $web and $web_port > 0 and ($host_keys | any {|p| $p == $web_host_key }) {
+        error make {msg: "agentsbox: auth callback relay host bind and port conflicts with --web"}
+    }
+    $relays | each {|r| ["-p" $"($r.bind):($r.host):($r.container)"] } | flatten
+}
+
 # Confirm podman is on PATH before reaching `podman build`, which would otherwise
 # abort with only an (empty) build-log pointer. Direct `nu make.nu` invocations
 # bypass bin/agentsbox's own require_podman guard, so this is the last line of defense.
@@ -271,7 +332,7 @@ export def "main shell" [] {
 ## Run the agent container in WORKDIR
 export def "main run" [
     --workdir: string                 # host project dir mounted at /workspace
-    --auth                            # bind host port 1455:1455 for OpenCode auth
+    --auth                            # enable global OAuth/MCP callback relays
     --a2a                             # join agentsbox-net and start the A2A listener
     --agent-name: string              # A2A alias (default: workdir basename)
     --agent: string = ""              # interactive agent to auto-launch in the session (claude/codex/opencode)
@@ -312,8 +373,13 @@ export def "main run" [
     let network = ($env.AGENTSBOX_NETWORK? | default "" | str trim)
     let no_publish = ($network == "host" or ($network | str starts-with "container:"))
     let project_ports = ($env.AGENTSBOX_PORTS? | default "" | lines | where $it != "")
+    let auth_callback_relays = ($env.AGENTSBOX_AUTH_CALLBACK_RELAYS? | default "" | lines | where $it != "")
     if $no_publish and ($auth or $web or ($project_ports | is-not-empty)) {
-        print -e $"agentsbox: --network '($network)' can't publish ports; ignoring --auth/--web/[[ports]]"
+        if $auth {
+            print -e $"agentsbox: --network '($network)' can't publish auth callback relays"
+            exit 1
+        }
+        print -e $"agentsbox: --network '($network)' can't publish ports; ignoring --web/[[ports]]"
     }
     if $network != "" and $a2a {
         print -e $"agentsbox: --network '($network)' is incompatible with --a2a, which requires agentsbox-net; aborting"
@@ -321,7 +387,8 @@ export def "main run" [
     }
 
     if $auth and not $no_publish {
-        $run_args = ($run_args | append ["-p" "1455:1455"])
+        $run_args = ($run_args | append (auth-callback-relay-flags $auth_callback_relays $project_ports $web $web_port $web_bind))
+        $run_args = ($run_args | append ["-e" $"AGENTSBOX_AUTH_CALLBACK_RELAYS=($auth_callback_relays | str join (char nl))"])
     }
     if $web and not $no_publish {
         # Zellij's web client binds the container loopback, but podman's bridge DNATs

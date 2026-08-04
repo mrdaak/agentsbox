@@ -74,6 +74,16 @@ config_ports() {
         2>/dev/null || true
 }
 
+# Read global auth callback relays as host<TAB>container<TAB>target<TAB>bind.
+# They are only passed to make.nu when `enter --auth` is requested.
+config_auth_callback_relays() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    CFG_FILE="$file" nu -c \
+        'try { open $env.CFG_FILE | get auth_callback_relays? | default [] | each { |r| $"($r.host? | default "")\t($r.container? | default "")\t($r.target? | default "")\t($r.bind? | default "")" } | to text } catch { "" }' \
+        2>/dev/null || true
+}
+
 # Fixed set of agents that can be baked into the image (installed_agents).
 # Single source of truth — is_valid_agent and the error messages both read it.
 VALID_AGENTS="claude codex pi opencode"
@@ -126,7 +136,7 @@ Subcommands:
   secrets ls     List secrets mounted in a project's agent shell
   secrets rm     Remove a secret from a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
-  config         Set a config value in .agentsbox/config.toml (--global for ~/.config)
+  config         Set or initialize Agentsbox configuration
   update         Pull the latest base image and rebuild
   doctor         Check host environment for required tooling
   help           Show this message
@@ -134,6 +144,8 @@ Subcommands:
 Options for 'config' (agentsbox config <field> <value> [options]):
   --global       Edit ~/.config/agentsbox.toml instead of the current project's
                  .agentsbox/config.toml (applies to every project)
+  init --global  Interactively create ~/.config/agentsbox.toml when missing;
+                 selects installed agents and adds auth callback relay defaults
   Supported fields:
     agent            the agent to auto-launch in a session
                      (claude, codex, opencode, pi, or 'none' for a plain shell)
@@ -143,7 +155,7 @@ Options for 'config' (agentsbox config <field> <value> [options]):
                      one-time selection wizard)
 
 Options for 'enter':
-  --auth         Bind host port 1455:1455 for OpenCode auth flows
+  --auth         Enable global auth_callback_relays for OAuth/MCP callbacks
   --web          Serve Zellij's web client; maps container 8082 to host
                  <index>8082 (agent 1 -> 18082, agent 2 -> 28082, ...) and
                  prints a one-time login token on enter
@@ -207,6 +219,19 @@ Options for 'enter':
   global equivalent. Skipped under network = "host" / container: (podman can't
   publish there).
 
+  Authentication callback relays are global-only. Add them to
+  ~/.config/agentsbox.toml, then pass --auth to enable them for a session:
+
+      auth_callback_relays = [
+        { host = 1455, container = 1456, target = 1455 }, # OpenCode
+        { host = 5555, container = 5556, target = 5555 }, # Jira MCP
+      ]
+
+  Each relay publishes bind:host to container, then forwards container's
+  externally reachable port to 127.0.0.1:target. bind defaults to 127.0.0.1.
+  Relays are not started during a normal enter, and cannot be used with
+  network = "host" / container:.
+
 Options for 'secrets add' (agentsbox secrets add <file> [options]):
   --target PATH  In-container mount path (default: /root/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
@@ -252,9 +277,13 @@ cmd_enter() {
     # — that stays the user's explicit choice.
     local config="$workdir/.agentsbox/config.toml"
     local global_conf="${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+    if [[ ! -f "$global_conf" && -t 0 ]]; then
+        echo "agentsbox: no global configuration found; initializing it now."
+        init_global_config "$global_conf" || exit 1
+    fi
     # Declared [[volumes]] (name<TAB>target per line) from project and global
     # config; validated/mounted/namespaced by make.nu.
-    local volumes="" global_volumes="" bind_mounts="" global_bind_mounts="" ports=""
+    local volumes="" global_volumes="" bind_mounts="" global_bind_mounts="" ports="" auth_callback_relays=""
     if [[ -f "$config" ]]; then
         [[ -n "$agent_name" ]] || agent_name="$(config_value "$config" AGENT_NAME)"
         volumes="$(config_volumes "$config")"
@@ -265,6 +294,12 @@ cmd_enter() {
     fi
     global_volumes="$(config_volumes "$global_conf")"
     global_bind_mounts="$(config_bind_mounts "$global_conf")"
+    auth_callback_relays="$(config_auth_callback_relays "$global_conf")"
+    if [[ -n "$auth" && -z "$auth_callback_relays" ]]; then
+        echo "enter: --auth requires auth_callback_relays in $global_conf" >&2
+        echo "  auth_callback_relays = [{ host = 5555, container = 5556, target = 5555 }]" >&2
+        exit 1
+    fi
     # CLI flag and project config already fill $network; only fall back to the
     # global config when both were empty (project beats global, per the AGENTS.md
     # precedence rule). Guarding on $network (not $network_set) preserves a
@@ -416,11 +451,21 @@ cmd_enter() {
             agentsbox_ports+="${phost}:${pcontainer}:${pbind}"$'\n'
         done <<< "$ports"
     fi
+    # auth_callback_relays are deliberately global-only: callback ports belong
+    # to a user's local browser, not to one project. Keep the list inert unless
+    # the explicit --auth flag was requested.
+    local agentsbox_auth_callback_relays=""
+    if [[ -n "$auth" && -n "$auth_callback_relays" ]]; then
+        while IFS=$'\t' read -r rhost rcontainer rtarget rbind; do
+            agentsbox_auth_callback_relays+="${rhost}:${rcontainer}:${rtarget}:${rbind}"$'\n'
+        done <<< "$auth_callback_relays"
+    fi
     export AGENTSBOX_VOLUMES="$agentsbox_volumes"
     export AGENTSBOX_GLOBAL_VOLUMES="$agentsbox_global_volumes"
     export AGENTSBOX_BIND_MOUNTS="$agentsbox_bind_mounts"
     export AGENTSBOX_GLOBAL_BIND_MOUNTS="$agentsbox_global_bind_mounts"
     export AGENTSBOX_PORTS="$agentsbox_ports"
+    export AGENTSBOX_AUTH_CALLBACK_RELAYS="$agentsbox_auth_callback_relays"
     # `network` is a single scalar, so it rides a sibling env var (same transport
     # pattern as AGENTSBOX_VOLUMES) into make.nu, which appends it as --network.
     export AGENTSBOX_NETWORK="$network"
@@ -646,6 +691,30 @@ set_toml_list_key() {
             | save -f $env.CFG_FILE'
 }
 
+# Create the global template only when it is absent, so initialization never
+# rewrites a user's existing configuration.
+init_global_config() {
+    local file="$1"
+    [[ ! -e "$file" ]] || { echo "config init: $file already exists; leaving it unchanged" >&2; return 1; }
+    [[ -t 0 ]] || { echo "config init: an interactive terminal is required to select agents" >&2; return 1; }
+    local chosen
+    chosen="$(nu "$SCRIPT_DIR/make.nu" select-agents)" || return 1
+    printf '%s\n' "$chosen" | validate_agent_names || return 1
+    mkdir -p "$(dirname "$file")"
+    CFG_FILE="$file" CFG_LIST="$chosen" nu -c \
+        '{ installed_agents: ($env.CFG_LIST | lines | where $it != ""), auth_callback_relays: [{ host: 1455, container: 1456, target: 1455 }, { host: 5555, container: 5556, target: 5555 }] } | to toml | save -f $env.CFG_FILE'
+    echo "agentsbox: initialized $file"
+    echo "  OAuth callback relays are ready for: agentsbox enter --auth"
+    if printf '%s\n' "$chosen" | grep -qx "codex"; then
+        echo "  For Codex MCP OAuth, add this top-level setting to ${CODEX_HOME:-$HOME/.codex}/config.toml:"
+        echo "    mcp_oauth_callback_port = 5555"
+    fi
+    local img_tag="${AGENTSBOX_VERSION:-latest}"
+    if command -v podman >/dev/null 2>&1 && podman image exists "agentsbox:$img_tag" >/dev/null 2>&1; then
+        echo "  Run agentsbox update to apply the selected installed_agents to the existing image."
+    fi
+}
+
 cmd_config() {
     local field="" value="" global=""
     while [[ $# -gt 0 ]]; do
@@ -658,9 +727,14 @@ cmd_config() {
         esac
     done
 
+    if [[ "$field" == "init" ]]; then
+        [[ -n "$global" && -z "$value" ]] || { echo "usage: agentsbox config init --global" >&2; exit 1; }
+        init_global_config "${XDG_CONFIG_HOME:-$HOME/.config}/agentsbox.toml"
+        return
+    fi
     if [[ -z "$field" || -z "$value" ]]; then
         echo "usage: agentsbox config <field> <value> [--global]" >&2
-        echo "  supported fields: agent, network, installed_agents" >&2
+        echo "  supported fields: agent, network, installed_agents, init" >&2
         exit 1
     fi
 
@@ -719,7 +793,7 @@ cmd_config() {
             set_toml_list_key "$file" "$field" "$names"
             ;;
         *)
-            echo "config: unsupported field '$field' (supported: agent, network, installed_agents)" >&2
+            echo "config: unsupported field '$field' (supported: agent, network, installed_agents, init)" >&2
             exit 1
             ;;
     esac

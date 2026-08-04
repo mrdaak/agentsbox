@@ -102,6 +102,29 @@ def check-image [] {
     }
 }
 
+# Warn only when the configured global relay intends to serve Codex on 5555.
+# OAuth is optional, so this check must never make doctor fail.
+def check-codex-mcp-callback [] {
+    let global_file = (($env.XDG_CONFIG_HOME? | default ($env.HOME | path join ".config")) | path join "agentsbox.toml")
+    if not ($global_file | path exists) { return [] }
+    let global = (try { open $global_file } catch {
+        return [(warn-check "couldn't read global agentsbox config" $"Check ($global_file) for TOML errors")]
+    })
+    let installed = ($global | get installed_agents? | default [])
+    let codex_enabled = if ($installed | is-empty) { true } else { $installed | any {|agent| $agent == "codex"} }
+    if not $codex_enabled { return [] }
+    let relays = ($global | get auth_callback_relays? | default [])
+    let has_codex_relay = ($relays | any {|relay| ($relay.target? | default "" | into string) == "5555"})
+    if not $has_codex_relay { return [] }
+    let codex_home = ($env.CODEX_HOME? | default ($env.HOME | path join ".codex"))
+    let codex_file = ($codex_home | path join "config.toml")
+    let callback_port = (try { open $codex_file | get mcp_oauth_callback_port | into int } catch { null })
+    if $callback_port == 5555 {
+        return [(pass "Codex MCP callback port matches auth relay (5555)")]
+    }
+    [(warn-check "Codex MCP callback port does not match the auth relay" $"Add mcp_oauth_callback_port = 5555 to ($codex_file)")]
+}
+
 # `warn`, not `fail`: doctor must stay usable offline and must not block
 # `enter`, which gates on doctor's fail count — so network/parse failures
 # degrade to a soft warn too.
@@ -168,6 +191,7 @@ def main [] {
         (check-nix)
         (check-podman)
         (check-image)
+        (check-codex-mcp-callback)
         (check-version)
     ] | flatten
 
