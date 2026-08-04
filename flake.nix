@@ -14,7 +14,7 @@
         # Single source of truth for the agentsbox version — consumed by the
         # wrapper (AGENTSBOX_VERSION) and the dev-shell shellHook, and threaded
         # into make.nu's image-tag for versioned podman image tags.
-        version = "0.1.21";
+        version = "0.1.22";
 
         runtimeDeps = [
           pkgs.nushell
