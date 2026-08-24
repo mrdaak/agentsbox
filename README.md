@@ -21,21 +21,13 @@ Isolated doesn't mean limited. agentsbox hands agents the [secrets](#secrets) th
 - **[Podman](https://podman.io/getting-started/installation)** — the container engine. Must be installed and running (rootless; no daemon-as-root needed).
 - **OS:** Linux and macOS. (On macOS, Podman runs in a lightweight VM — `agentsbox doctor` will tell you if the machine isn't ready.) Windows is not currently supported; use WSL2 + Linux Podman.
 
-## Install
+## Install & Upgrade:
 
 ```bash
 nix profile install github:mrdaak/agentsbox
 ```
 
 Now you can run `agentsbox` from any project directory. If anything goes wrong, start with `agentsbox doctor`.
-
-## Upgrade
-
-Update the `agentsbox` command to the latest published version:
-
-```bash
-nix profile upgrade agentsbox
-```
 
 ## Commands
 
@@ -119,6 +111,29 @@ cloned repo can't run code at `enter` time.
 
 ---
 
+## Maintenance
+
+The shared `/nix` store volume grows as every project's `nix develop` inputs
+accumulate. To garbage-collect it in place (keeps the cached store, drops
+unreachable paths):
+
+```bash
+agentsbox gc
+```
+
+To drop it entirely and re-seed from the image on the next `enter` (use after a
+broken build, or to reclaim all the space):
+
+```bash
+agentsbox clean-nix-store
+```
+
+A stale `/nix` volume (left over from an older image after a rebuild) is
+detected and reseeded automatically on `enter` — you don't need to do
+anything.
+
+---
+
 ## Automatic project setup with Nix
 
 If your project has `flake.nix`, on `enter` the sandbox spots it and offers
@@ -163,8 +178,10 @@ Each box's A2A alias defaults to its **project directory basename** (`backend/` 
 agentsbox runs each agent **rootless** (never as root on your host) in an ephemeral Podman container:
 
 - **Rootless** — Podman runs as your user; there is no root daemon and the container has no path to host root.
+- **Non-root in-container user** — the agent runs as an unprivileged `agent` user inside the container (`--user agent`, plus `--userns=keep-id:uid=1000,gid=1000` on a Linux host), mapped to your host user so files in the project dir stay yours.
 - **Workspace-only filesystem** — the agent sees `/workspace` (your project) plus the explicitly-listed config/skill mounts, nothing else on your host.
 - **`no-new-privileges`** — `--security-opt no-new-privileges:true` blocks any privilege escalation inside the container.
+- **Hardened container** — `--cap-drop=ALL --pids-limit=2048 --memory=8g` bounds fork bombs, memory, and the in-container attack surface.
 - **Ephemeral (`--rm`)** — containers are destroyed after each session, so nothing persists between runs unless you mount it. ([Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers))
 - **Reproducible base** — the image is built from a pinned `ghcr.io/nixos/nix` base and a version-pinned Nix profile, rebuilt from version-controlled sources.
 

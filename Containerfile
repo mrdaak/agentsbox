@@ -14,26 +14,32 @@ RUN echo "$AGENTSBOX_INSTALLED_AGENTS" \
  && nix-collect-garbage -d \
  && rm -rf /tmp/nix
 
-# Set up XDG directories for proper config loading
+# Create the non-root in-container user. The box runs as this user by default
+# (`--user agent` in make.nu, plus --userns=keep-id on a Linux host, maps the
+# invoking host user onto this uid so /workspace writes come out owned by
+# them). The base nix image ships no useradd/adduser, so write the
+# passwd/group/shadow entries directly — uid/gid 1000, home /home/agent,
+# shell /bin/bash match useradd's defaults.
+RUN printf 'agent:x:1000:1000::/home/agent:/bin/bash\n' >> /etc/passwd \
+ && printf 'agent:x:1000:\n' >> /etc/group \
+ && printf 'agent:!:19000:0:99999:7:::\n' >> /etc/shadow \
+ && mkdir -p /home/agent
+
+# XDG ENVs stay at /root for the build-time `nix profile add` (which runs as
+# root and writes /root/.nix-profile). make.nu overrides these at run with
+# -e XDG_CONFIG_HOME=/home/agent/.config, so the running box uses /home/agent.
 ENV XDG_CONFIG_HOME=/root/.config
 ENV XDG_DATA_HOME=/root/.local/share
 ENV OPENCODE_CONFIG_DIR=/root/.config/opencode
 
-# Configure pnpm to use a shared store at /pnpm-store. pnpm 11 reads YAML
-# config from $XDG_CONFIG_HOME/pnpm/config.yaml; it ignores npm_config_* env
-# vars and /etc/npmrc, and would otherwise place the store at the mount-point
-# root of /workspace.
-RUN mkdir -p /root/.config/pnpm \
+# pnpm + Zellij config written to /home/agent so the running box (as agent)
+# finds them. /root copies are gone — one path, the runtime one.
+RUN mkdir -p /home/agent/.config/pnpm /home/agent/.config/zellij \
  && printf 'storeDir: /pnpm-store\npackageImportMethod: copy\n' \
-    > /root/.config/pnpm/config.yaml
+    > /home/agent/.config/pnpm/config.yaml \
+ && chown -R agent:agent /home/agent
 
-# Bake in the Zellij config. It used to be bind-mounted from the package at run
-# time, but on macOS podman runs in a Linux VM that can't see the host's
-# /nix/store (where the package lives), so the mount failed with `statfs ... no
-# such file or directory`. Copying it into the image at build time works on every
-# host: the build context streams from the host, unlike runtime bind mounts.
-# zellij reads $XDG_CONFIG_HOME/zellij/config.kdl (XDG_CONFIG_HOME=/root/.config).
-COPY zellij-config.kdl /root/.config/zellij/config.kdl
+COPY zellij-config.kdl /home/agent/.config/zellij/config.kdl
 
 # Allow git to work on mounted repositories in /workspace
 RUN git config --system safe.directory /workspace

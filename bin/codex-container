@@ -2,6 +2,6 @@
 # codex-container — run Codex unsandboxed; the Podman container is the boundary
 set -euo pipefail
 
-REAL_CODEX="/root/.nix-profile/bin/codex"
+REAL_CODEX="/nix/var/nix/profiles/default/bin/codex"
 
 exec "$REAL_CODEX" --dangerously-bypass-approvals-and-sandbox "$@"

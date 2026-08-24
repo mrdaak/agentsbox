@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
+# The box runs as the non-root `agent` user (--user agent in make.nu);
+# HOME must point at its home so nix and zellij write there.
+export HOME=/home/agent
+
 # Zellij names the session (shown in its UI and the terminal title as
 # "Zellij (<name>)"). Without an explicit name, `zellij attach --create`
 # generates a random one and ignores session_name from the config file, so we
@@ -60,7 +64,7 @@ fi
 # print it here (see https://zellij.dev/documentation/web-client.html). The
 # guard file makes this idempotent across the `nix develop` re-exec.
 # Write a Zellij layout (stock default, but the main pane runs $AGENTSBOX_AGENT).
-AGENT_LAYOUT="${XDG_CONFIG_HOME:-/root/.config}/zellij/layouts/agentsbox.kdl"
+AGENT_LAYOUT="${XDG_CONFIG_HOME:-/home/agent/.config}/zellij/layouts/agentsbox.kdl"
 write_agent_layout() {
     mkdir -p "$(dirname "$AGENT_LAYOUT")"
     cat > "$AGENT_LAYOUT" <<EOF

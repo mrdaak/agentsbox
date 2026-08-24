@@ -138,6 +138,7 @@ Subcommands:
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
   config         Set or initialize Agentsbox configuration
   update         Pull the latest base image and rebuild
+  gc             Garbage-collect the shared /nix store in place (refuses if a session is running)
   doctor         Check host environment for required tooling
   help           Show this message
 
@@ -189,12 +190,12 @@ Options for 'enter':
 
       [[volumes]]
       name   = "go-cache"
-      target = "/root/go"
+      target = "/home/agent/go"
 
   The same [[volumes]] syntax in ~/.config/agentsbox.toml declares GLOBAL
   volumes (namespaced agent-global-<name>), mounted in every project's session —
   handy for persisting a tool's login/config across projects, e.g. a cursor-cli
-  login cached at /root/.cursor. On a shared target the project mount wins.
+  login cached at /home/agent/.cursor. On a shared target the project mount wins.
 
   Host paths may be mounted explicitly with [[bind_mounts]] in either project or
   global config. Project bind mounts win over global bind mounts on the same
@@ -202,7 +203,7 @@ Options for 'enter':
 
       [[bind_mounts]]
       source   = "~/.aws"
-      target   = "/root/.aws"
+      target   = "/home/agent/.aws"
       readonly = true
 
   A project may declare published ports in .agentsbox/config.toml via a
@@ -233,7 +234,7 @@ Options for 'enter':
   network = "host" / container:.
 
 Options for 'secrets add' (agentsbox secrets add <file> [options]):
-  --target PATH  In-container mount path (default: /root/<filename>)
+  --target PATH  In-container mount path (default: /home/agent/<filename>)
   --name NAME    Secret key (default: <filename>); re-loading replaces it
   --project DIR  Project the secret belongs to (default: current directory)
   --global       Mount in every project's agent shell (not just one project)
@@ -538,7 +539,7 @@ cmd_load_secret() {
     local base secret
     base="$(basename "$file")"
     [[ -n "$name" ]]   || name="$base"
-    [[ -n "$target" ]] || target="/root/$base"
+    [[ -n "$target" ]] || target="/home/agent/$base"
 
     if [[ -n "$global" ]]; then
         # Distinct prefix (a project hash is 8 hex chars, never "global") so the
@@ -810,6 +811,11 @@ cmd_update() {
     exec nu "$SCRIPT_DIR/make.nu" update
 }
 
+cmd_gc() {
+    require_podman
+    exec nu "$SCRIPT_DIR/make.nu" gc-nix-store
+}
+
 cmd_doctor() {
     exec "$SCRIPT_DIR/bin/doctor" "$@"
 }
@@ -827,6 +833,7 @@ case "$1" in
     install-skills) shift; cmd_install_skills "$@" ;;
     config)         shift; cmd_config "$@" ;;
     update)         shift; cmd_update ;;
+    gc)            shift; cmd_gc ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;
     --*)            cmd_enter "$@" ;;

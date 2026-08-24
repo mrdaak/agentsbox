@@ -104,6 +104,16 @@ def check-image [] {
 
 # Warn only when the configured global relay intends to serve Codex on 5555.
 # OAuth is optional, so this check must never make doctor fail.
+# Warn (never fail) on root-owned files in the project dir. Upgrading from
+# the old root-in-box leaves files the new non-root `agent` user cannot
+# write to; this surfaces the one-time `chown` the user needs.
+def check-workdir-ownership [] {
+    let dir = $env.PWD
+    let owned = (do -i { ^find $dir -maxdepth 3 -user root -not -path '*/.git/*' -print -quit } | default [] | lines)
+    if ($owned | is-empty) { return [] }
+    [(warn-check $"root-owned files in ($dir) — left by the old root-in-box" $"sudo chown -R (id -u):(id -g) ($dir)")]
+}
+
 def check-codex-mcp-callback [] {
     let global_file = (($env.XDG_CONFIG_HOME? | default ($env.HOME | path join ".config")) | path join "agentsbox.toml")
     if not ($global_file | path exists) { return [] }
@@ -192,6 +202,7 @@ def main [] {
         (check-podman)
         (check-image)
         (check-codex-mcp-callback)
+        (check-workdir-ownership)
         (check-version)
     ] | flatten
 

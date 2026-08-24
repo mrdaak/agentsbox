@@ -33,7 +33,18 @@ podman does not run inside an agentsbox container, so defer those to a host shel
 ## Conventions & Invariants
 
 - **Rootless only:** never use `sudo` or run Podman as root.
-- **Every `podman run`:** include `--rm` and `--security-opt no-new-privileges:true`.
+- **Every `podman run`:** include `--rm`, `--security-opt
+  no-new-privileges:true`, `--cap-drop=ALL`, `--pids-limit`, `--memory`, and
+  `--user agent` (the box runs as a non-root in-container user). Add
+  `--userns=keep-id:uid=1000,gid=1000` via `userns-flags` — a local Linux
+  podman needs it to map the invoking user onto agent's uid, while `podman
+  machine` (macOS/Windows) rejects `--userns` outright and already id-maps its
+  shared dirs.
+- **In-container home dir is `/home/agent`:** `make.nu` `run_args` env vars
+  (`XDG_*`), every config bind-mount target, `built-in-mounts`, and
+  `bin/agentsbox`'s default secret target (`/home/agent/<filename>`) all
+  assume this. `bin/shell-entrypoint` sets `HOME=/home/agent`. Change all
+  of them together if the in-container user ever moves.
 - **Project hash parity:** `make.nu` `workdir-hash`, `bin/agentsbox` `sha1_8`, and
   `bin/list-secrets` all use SHA-1 (first 8 hex) of the canonical absolute workdir
   path. Do not change the algorithm without re-verifying all three.
@@ -83,6 +94,20 @@ podman does not run inside an agentsbox container, so defer those to a host shel
   globals `agent-global-<name>`; on a shared mount target the project secret wins.
 - **`:Z`** on all Podman bind mounts (SELinux-aware systems). Create host dirs
   with `mkdir -p` before mounting (`make.nu run` already does this).
+- **`/nix` volume image-stamp:** `make.nu` `ensure-nix-volume-stamped`
+  stamps the `agent-nix-store` volume's `agents.image` label with the running
+  image's full digest (`podman image inspect … --format '{{.Id}}'`). On
+  `enter`, a stamp mismatch (or a legacy unstamped volume) drops and reseeds
+  the volume. Do not change the label key (`agents.image`) or the digest
+  source (`{{.Id}}`) without re-verifying `ensure-nix-volume-stamped`,
+  `main update`, and `main gc-nix-store` together.
+- **`:U` on `/nix` and `/pnpm-store`:** both named volumes seed from image
+  content owned by root; `:U` chowns them to the box user. Without it
+  single-user nix (`build-users-group =`, no daemon) cannot lock
+  `/nix/var/nix/db` as uid 1000 and `nix develop` fails in every box.
+- **Version sync:** the `version` in `flake.nix` and the pinned install URL
+  in `README.md` (`github:mrdaak/agentsbox/v<version>`) must bump together.
+  No automated check exists; see the release checklist.
 - **Comments:** one-line header after the shebang stating *what* the file does;
   inline `#` only for non-obvious *why* (ordering deps, cross-file invariants,
   footgun guards). Never restate the code or leave commented-out code.

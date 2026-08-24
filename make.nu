@@ -15,6 +15,60 @@ def image-tag [] {
     $env.AGENTSBOX_VERSION? | default "latest"
 }
 
+# Full sha256 image ID of the agentsbox image we are about to run. 'main run'
+# calls build-image first, so the tag exists by the time this is called.
+def image-digest [] {
+    ^podman image inspect $"($IMAGE_NAME):(image-tag)" --format '{{.Id}}'
+        | str trim
+}
+
+# Ensure the shared /nix named volume exists and is stamped with the image
+# digest of the agentsbox image we are about to run. Podman seeds a named
+# volume from image content ONLY when the volume is empty; a pre-existing
+# stale volume silently shadows a rebuilt image. We stamp the volume's
+# agents.image label on first creation and, on each run, compare it to the
+# current image's digest. On mismatch we drop and reseed; on a missing label
+# (a legacy volume from before this code shipped) we relabel in place so the
+# first run after upgrade isn't a surprise full re-copy, and let the next
+# real image bump trigger the drop.
+def ensure-nix-volume-stamped [] {
+    let digest = (image-digest)
+    # Podman's {{.Id}} is a bare 64-char hex digest; Docker prefixes 'sha256:'.
+    # Accept either — the stamp/compare below only needs a stable, non-empty ID.
+    if ($digest | is-empty) or not ($digest =~ '^(sha256:)?[0-9a-fA-F]{64}$') {
+        error make {msg: "agentsbox: could not resolve image digest for the /nix volume stamp (is the image built?)"}
+    }
+    let existing = (do -i { podman volume ls --format '{{.Name}}' } | default "" | lines)
+    if ($NIX_VOLUME not-in $existing) {
+        podman volume create --label $"agents.image=($digest)" $NIX_VOLUME out+err>| ignore
+        return
+    }
+    let stamped = (do -i {
+        podman volume inspect $NIX_VOLUME --format '{{index .Labels "agents.image"}}'
+    } | default "" | str trim)
+    if $stamped == $digest { return }
+    if $stamped == "" {
+        # Legacy pre-stamp volume: relabel in place. If `podman volume label`
+        # is unavailable (older Podman), fall back to drop+reseed with a loud
+        # message so the one-time full re-copy is at least explained.
+        let relabeled = (try {
+            podman volume label $NIX_VOLUME $"agents.image=($digest)" out+err>| ignore
+            true
+        } catch { false })
+        if $relabeled {
+            print -e "agentsbox: stamped the existing /nix store volume (legacy, first run after upgrade)"
+            return
+        }
+        print -e "agentsbox: the /nix store volume predates image-stamping and `podman volume label` is unavailable; dropping and reseeding from the current image (one-time full re-copy)…"
+        do -i { podman volume rm $NIX_VOLUME } | ignore
+        podman volume create --label $"agents.image=($digest)" $NIX_VOLUME out+err>| ignore
+        return
+    }
+    print -e $"agentsbox: the /nix store volume is stale \(was built for ($stamped), current image is ($digest)\); rebuilding it from the new image…"
+    do -i { podman volume rm $NIX_VOLUME } | ignore
+    podman volume create --label $"agents.image=($digest)" $NIX_VOLUME out+err>| ignore
+}
+
 # Repo root — source of truth for the Containerfile and zellij-config.kdl.
 def root [] {
     let r = ($env.AGENTS_TOOLS_DIR?)
@@ -77,9 +131,9 @@ def secret-flags [hash: string] {
 # the same path and we want to fail with a clear message rather than podman's.
 def built-in-mounts [] {
     [ /workspace /nix /pnpm-store
-      /root/.agents /root/.claude /root/.claude.json
-      /root/.codex /root/.config/codex /root/.local/share/codex
-      /root/.pi/agent /root/.config/opencode /root/.local/share/opencode ]
+      /home/agent/.agents /home/agent/.claude /home/agent/.claude.json
+      /home/agent/.codex /home/agent/.config/codex /home/agent/.local/share/codex
+      /home/agent/.pi/agent /home/agent/.config/opencode /home/agent/.local/share/opencode ]
 }
 
 # -v flags for declared [[volumes]] (each entry "name:target"). Project entries
@@ -279,6 +333,15 @@ def require-podman [] {
     }
 }
 
+# keep-id maps the invoking user onto agent's uid so the bind mounts stay
+# writable. `podman machine` (macOS/Windows) rejects --userns as mutually
+# exclusive with the id-maps it already applies to the VM's shared dirs, so the
+# flag is for a local Linux podman only.
+def userns-flags [] {
+    let remote = (do -i { ^podman info --format '{{.Host.ServiceIsRemote}}' } | default "" | str trim)
+    if $remote == "false" { ["--userns=keep-id:uid=1000,gid=1000"] } else { [] }
+}
+
 # Build the image. Full output goes to the build log (via tee), but the `STEP x/y`
 # lines are surfaced as a single in-place progress line so `enter` isn't a silent
 # wait. On failure, print the log location and exit non-zero — the try/catch turns
@@ -303,6 +366,14 @@ def build-image [] {
             }
             | ignore
         )
+        let digest = (do -i { image-digest } | default "")
+        # Podman's {{.Id}} is a bare 64-char hex digest; Docker prefixes 'sha256:'.
+        # Accept either so this guard doesn't false-positive on a successful
+        # Podman build and mislabel it as a failure.
+        if ($digest | is-empty) or not ($digest =~ '^(sha256:)?[0-9a-fA-F]{64}$') {
+            print -e $"(char cr)(ansi -e '2K')agentsbox: image build failed; see: ($log)"
+            exit 1
+        }
         print $"(char cr)(ansi -e '2K')Sandbox environment ready."
     } catch {
         print -e $"(char cr)(ansi -e '2K')agentsbox: image build failed; see: ($log)"
@@ -321,6 +392,8 @@ export def "main update" [] {
     cd (root)
     let agents = (resolve-installed-agents)
     podman build --no-cache --build-arg $"AGENTSBOX_INSTALLED_AGENTS=($agents | str join (char nl))" -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
+    # update is the explicit "nuke" path; ensure-nix-volume-stamped (on the
+    # next run) recreates a stamped volume; gc-nix-store is the lean path.
     do -i { podman volume rm $NIX_VOLUME }
 }
 
@@ -347,6 +420,8 @@ export def "main run" [
 
     build-image
 
+    ensure-nix-volume-stamped
+
     let home = $env.HOME
     let hash = (workdir-hash $workdir)
     let name = (if ($agent_name | is-empty) { $workdir | path basename } else { $agent_name })
@@ -359,16 +434,22 @@ export def "main run" [
     mut run_args = [
         -it --rm --name $container
         --security-opt no-new-privileges:true
-        -e XDG_CONFIG_HOME=/root/.config
-        -e XDG_DATA_HOME=/root/.local/share
-        -e OPENCODE_CONFIG_DIR=/root/.config/opencode
-        -v $"($NIX_VOLUME):/nix"
-        -v $"($PNPM_VOLUME):/pnpm-store"
-        -v $"($home)/.agents:/root/.agents:Z"
-        -v $"($home)/.opencode/config:/root/.config/opencode:Z"
-        -v $"($home)/.opencode/data:/root/.local/share/opencode:Z"
-        -p 4096
+        --cap-drop=ALL
+        --pids-limit=2048
+        --memory=8g
+        --user agent
+        -e XDG_CONFIG_HOME=/home/agent/.config
+        -e XDG_DATA_HOME=/home/agent/.local/share
+        -e OPENCODE_CONFIG_DIR=/home/agent/.config/opencode
+        # :U chowns the volume to the box user; without it the store seeds
+        # root-owned and single-user nix cannot lock /nix/var/nix/db.
+        -v $"($NIX_VOLUME):/nix:U"
+        -v $"($PNPM_VOLUME):/pnpm-store:U"
+        -v $"($home)/.agents:/home/agent/.agents:Z"
+        -v $"($home)/.opencode/config:/home/agent/.config/opencode:Z"
+        -v $"($home)/.opencode/data:/home/agent/.local/share/opencode:Z"
     ]
+    $run_args = ($run_args | append (userns-flags))
 
     let network = ($env.AGENTSBOX_NETWORK? | default "" | str trim)
     let no_publish = ($network == "host" or ($network | str starts-with "container:"))
@@ -426,12 +507,12 @@ export def "main run" [
 
     $run_args = ($run_args | append [
         -e $"AGENT_NAME=($name)"
-        -v $"($home)/.claude:/root/.claude:Z"
-        -v $"($home)/.claude.json:/root/.claude.json:Z"
-        -v $"($home)/.codex:/root/.codex:Z"
-        -v $"($home)/.config/codex:/root/.config/codex:Z"
-        -v $"($home)/.local/share/codex:/root/.local/share/codex:Z"
-        -v $"($home)/.pi/agent:/root/.pi/agent:Z"
+        -v $"($home)/.claude:/home/agent/.claude:Z"
+        -v $"($home)/.claude.json:/home/agent/.claude.json:Z"
+        -v $"($home)/.codex:/home/agent/.codex:Z"
+        -v $"($home)/.config/codex:/home/agent/.config/codex:Z"
+        -v $"($home)/.local/share/codex:/home/agent/.local/share/codex:Z"
+        -v $"($home)/.pi/agent:/home/agent/.pi/agent:Z"
         -v $"($workdir):/workspace:Z"
     ])
     $run_args = ($run_args | append (secret-flags $hash))
@@ -462,6 +543,38 @@ export def "main doctor" [] {
 ## Remove the persistent Nix store volume (next run re-populates from image)
 export def "main clean-nix-store" [] {
     podman volume rm $NIX_VOLUME
+}
+
+## In-place garbage collection of the shared /nix store volume (does NOT drop
+## it). Refuses while a session is live: the gc container scans only its own
+## PID namespace, so a running box's devShell (rooted only by its shell
+## process) would look unreachable and be deleted out from under it.
+export def "main gc-nix-store" [] {
+    require-podman
+    let live = (do -i {
+        podman ps --filter "name=^agent-" --format '{{.Names}}'
+    } | default "" | lines | where $it != "")
+    if not ($live | is-empty) {
+        print -e $"agentsbox: refusing to gc — ($live | length) session\(s\) running: ($live | str join ', ')"
+        print -e "  Stop them first (exit the shells), then re-run: agentsbox gc"
+        exit 1
+    }
+    print "Running nix-collect-garbage on the shared /nix store…"
+    let vol = $"($NIX_VOLUME):/nix:U"
+    let img = $"($IMAGE_NAME):(image-tag)"
+    # --entrypoint because shell-entrypoint ignores "$@" and launches Zellij,
+    # so a trailing command would never run.
+    let gc_args = ([
+        --rm
+        --security-opt no-new-privileges:true
+        --cap-drop=ALL
+        --pids-limit=2048
+        --memory=8g
+        --user agent
+        --entrypoint nix-collect-garbage
+    ] | append (userns-flags) | append [-v $vol $img -d])
+    podman run ...$gc_args
+    print "Done."
 }
 
 ## Remove the persistent pnpm store volume (next run re-populates from image)
@@ -504,6 +617,6 @@ export def "main select-a2a-agent" [] {
 }
 
 export def main [] {
-    print "Usage: nu make.nu <build|run|update|shell|doctor|clean-nix-store|clean-pnpm-store>"
+    print "Usage: nu make.nu <build|run|update|shell|doctor|clean-nix-store|gc-nix-store|clean-pnpm-store>"
     print "  run requires --workdir; see bin/agentsbox for the caller."
 }
