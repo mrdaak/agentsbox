@@ -19,6 +19,16 @@ let
     x86_64-darwin = "sha256-hf56g363Od1eHMWanJW3toIEjlqs3CYVBbrnaPsSiO8=";
   }.${pkgs.stdenv.hostPlatform.system};
 
+  codeModeHost = pkgs.fetchurl {
+    url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-code-mode-host-${target}.tar.gz";
+    sha256 = {
+      aarch64-linux = "sha256-li4CnfdytTy5d6AgTsQoTQxpMgeiWkkRBugpSq6N+gQ=";
+      x86_64-linux = "sha256-YvosPl1LxYcgvXKy7iq4Y24aqp2CNt2uQaHM5ii1mus=";
+      aarch64-darwin = "sha256-quHAyUWXAKLol62t1kc1EUCueTOtc72NOvZQXGmk8/0=";
+      x86_64-darwin = "sha256-OiS8NC6g5gnnB/YhGYfUmcM8CaT3WJGpTdRr7498W74=";
+    }.${pkgs.stdenv.hostPlatform.system};
+  };
+
   codex = pkgs.stdenv.mkDerivation (finalAttrs: {
     pname = "codex";
     inherit version;
@@ -37,6 +47,8 @@ let
     installPhase = ''
       runHook preInstall
       install -Dm755 codex-${target} $out/bin/codex
+      tar -xOf ${codeModeHost} codex-code-mode-host-${target} > $out/bin/codex-code-mode-host
+      chmod 755 $out/bin/codex-code-mode-host
       runHook postInstall
     '';
 
