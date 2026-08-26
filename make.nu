@@ -122,7 +122,9 @@ def secret-flags [hash: string] {
     }
     | where target != ""
     | uniq-by target
-    | each {|s| ["--secret" $"($s.name),target=($s.target),mode=0400"] }
+    # Podman secrets default to root:root. Keep secrets owner-readable only,
+    # but assign them to the non-root user that runs the agent shell.
+    | each {|s| ["--secret" $"($s.name),target=($s.target),uid=1000,gid=1000,mode=0400"] }
     | flatten
 }
 

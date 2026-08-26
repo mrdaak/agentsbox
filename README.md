@@ -76,10 +76,10 @@ only into that project's shell; `--global` mounts it into **every** project's sh
 
 ```bash
 cd ~/src/my-project
-agentsbox secrets add ./.env                           # this project, mounts at /root/.env
-agentsbox secrets add ./gh-token --target /root/.config/gh/hosts.yml
+agentsbox secrets add ./.env                           # this project, mounts at /home/agent/.env
+agentsbox secrets add ./gh-token --target /home/agent/.config/gh/hosts.yml
 agentsbox secrets add ~/secrets/key --project ~/src/other
-agentsbox secrets add ~/.npmrc --target /root/.npmrc --global   # all projects
+agentsbox secrets add ~/.npmrc --global                         # all projects, mounts at /home/agent/.npmrc
 ```
 
 If a project secret and a global one share a target, the project one wins.
