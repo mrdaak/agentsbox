@@ -24,6 +24,29 @@ def semver [name: string] {
     {major: ($nums | get 0), minor: ($nums | get 1), patch: ($nums | get 2)}
 }
 
+# null on any network/parse failure — a non-list body (e.g. a GitHub
+# rate-limit record) throws on `get name` below, so that's caught too.
+def fetch-release-versions []: nothing -> any {
+    let tags = (try {
+        http get $"https://api.github.com/repos/($GITHUB_REPO)/tags"
+    } catch {
+        null
+    })
+    if $tags == null { return null }
+    try {
+        $tags | get name | each {|n| semver $n } | where $it != null
+    } catch {
+        null
+    }
+}
+
+# null if it can't be resolved (network/parse failure, or no tags yet).
+def latest-release []: nothing -> any {
+    let versions = (fetch-release-versions)
+    if $versions == null or ($versions | is-empty) { return null }
+    $versions | sort-by major minor patch | last
+}
+
 def check-nix [] {
     if not (has-cmd "nix") {
         return [(fail-check "Nix not installed" "https://nixos.org/download/")]
@@ -146,23 +169,9 @@ def check-version [] {
         return []
     }
 
-    let tags = (try {
-        http get $"https://api.github.com/repos/($GITHUB_REPO)/tags"
-    } catch {
-        null
-    })
-    # null => network/http failure OR a non-list body (e.g. a GitHub rate-limit
-    # record); the `get name` below would throw on the latter, so wrap it too.
-    if $tags == null {
-        return [(warn-check "couldn't check for updates (GitHub unreachable)" "nix profile upgrade agentsbox")]
-    }
-    let versions = (try {
-        $tags | get name | each {|n| semver $n } | where $it != null
-    } catch {
-        null
-    })
+    let versions = (fetch-release-versions)
     if $versions == null {
-        return [(warn-check "couldn't check for updates (GitHub unreachable)" "nix profile upgrade agentsbox")]
+        return [(warn-check "couldn't check for updates (GitHub unreachable)" "agentsbox upgrade")]
     }
     if ($versions | is-empty) {
         return [(pass $"agentsbox ($installed) installed \(no release tags yet\)")]
@@ -171,7 +180,7 @@ def check-version [] {
     let latest = ($versions | sort-by major minor patch | last)
     let inst = (semver $installed)
     if $inst == null {
-        return [(warn-check $"agentsbox ($installed) installed \(unparseable version\)" "nix profile upgrade agentsbox")]
+        return [(warn-check $"agentsbox ($installed) installed \(unparseable version\)" "agentsbox upgrade")]
     }
 
     let cmp = (
@@ -187,13 +196,20 @@ def check-version [] {
     if $cmp == 0 {
         [(pass $"agentsbox up to date \(($lv)\)")]
     } else if $cmp < 0 {
-        [(warn-check $"agentsbox ($lv) available \(installed ($installed)\)" "nix profile upgrade agentsbox")]
+        [(warn-check $"agentsbox ($lv) available \(installed ($installed)\)" "agentsbox upgrade")]
     } else {
         [(pass $"agentsbox ($installed) installed \(ahead of latest tag ($lv)\)")]
     }
 }
 
-def main [] {
+def main [--latest-tag] {
+    if $latest_tag {
+        let r = (latest-release)
+        if $r == null { exit 1 }
+        print $"($r.major).($r.minor).($r.patch)"
+        return
+    }
+
     print "Checking environment..."
     print ""
 

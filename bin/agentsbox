@@ -138,6 +138,7 @@ Subcommands:
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
   config         Set or initialize Agentsbox configuration
   update         Pull the latest base image and rebuild
+  upgrade        Replace the installed pinned agentsbox with the latest published tag
   gc             Garbage-collect the shared /nix store in place (refuses if a session is running)
   doctor         Check host environment for required tooling
   help           Show this message
@@ -811,6 +812,41 @@ cmd_update() {
     exec nu "$SCRIPT_DIR/make.nu" update
 }
 
+# Removes the profile element, then installs the new tag.
+# Host-only nix-profile plumbing; unlike update/gc, doesn't dispatch to make.nu.
+cmd_upgrade() {
+    local installed="${AGENTSBOX_VERSION:-}"
+
+    if [[ -z "$installed" || "$installed" == "latest" ]]; then
+        # Raw `nu make.nu` builds carry AGENTSBOX_VERSION=latest; pin onto
+        # the latest release rather than guess.
+        echo "agentsbox: installed copy is not a pinned release; pinning onto the latest tag." >&2
+        installed=""
+    fi
+
+    # Reuses bin/doctor's tag lookup so doctor's "update available" message
+    # and this command's target version can never disagree.
+    local latest
+    if ! latest="$(nu "$SCRIPT_DIR/bin/doctor" --latest-tag)" || [[ -z "$latest" ]]; then
+        echo "agentsbox: could not resolve the latest published tag (network problem?)." >&2
+        echo "  install manually: nix profile install github:mrdaak/agentsbox/v<tag>" >&2
+        exit 1
+    fi
+
+    # sort -V picks the higher of the two.
+    if [[ -n "$installed" ]] \
+       && [[ "$(printf '%s\n%s\n' "$installed" "$latest" | sort -V | tail -1)" == "$installed" ]]; then
+        echo "agentsbox: already at the latest published tag (v$installed)."
+        return 0
+    fi
+
+    echo "agentsbox: upgrading ${installed:+from v$installed }to v$latest …"
+
+    nix profile remove agentsbox 2>/dev/null || true
+    nix profile install "github:mrdaak/agentsbox/v$latest"
+    echo "agentsbox: upgraded to v$latest — open a new shell to pick it up."
+}
+
 cmd_gc() {
     require_podman
     exec nu "$SCRIPT_DIR/make.nu" gc-nix-store
@@ -833,6 +869,7 @@ case "$1" in
     install-skills) shift; cmd_install_skills "$@" ;;
     config)         shift; cmd_config "$@" ;;
     update)         shift; cmd_update ;;
+    upgrade)        shift; cmd_upgrade ;;
     gc)            shift; cmd_gc ;;
     doctor)         shift; cmd_doctor "$@" ;;
     help|-h|--help) usage ;;

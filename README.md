@@ -21,13 +21,21 @@ Isolated doesn't mean limited. agentsbox hands agents the [secrets](#secrets) th
 - **[Podman](https://podman.io/getting-started/installation)** — the container engine. Must be installed and running (rootless; no daemon-as-root needed).
 - **OS:** Linux and macOS. (On macOS, Podman runs in a lightweight VM — `agentsbox doctor` will tell you if the machine isn't ready.) Windows is not currently supported; use WSL2 + Linux Podman.
 
-## Install & Upgrade:
+## Install & Upgrade
+
+Install a specific, pinned release (recommended):
 
 ```bash
-nix profile install github:mrdaak/agentsbox
+nix profile install github:mrdaak/agentsbox/v0.1.25
 ```
 
 Now you can run `agentsbox` from any project directory. If anything goes wrong, start with `agentsbox doctor`.
+
+To upgrade a pinned install to the latest published tag:
+
+```bash
+agentsbox upgrade
+```
 
 ## Commands
 
@@ -41,6 +49,7 @@ Now you can run `agentsbox` from any project directory. If anything goes wrong, 
 | `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
 | `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`             |
 | `agentsbox update`             | Pull the latest base image and rebuild the container                              |
+| `agentsbox upgrade`            | Replace the installed pinned agentsbox with the latest published tag              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |
 | `agentsbox help`               | Show usage                                                                        |
 
