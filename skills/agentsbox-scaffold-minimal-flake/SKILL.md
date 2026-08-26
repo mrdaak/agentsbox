@@ -1,5 +1,5 @@
 ---
-name: scaffold-minimal-flake
+name: agentsbox-scaffold-minimal-flake
 description: Use when the user asks to scaffold a minimal Nix flake for a project that does not have one.
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentsbox — dispatcher for enter / ls / secrets / install-skills / rebuild / doctor
+# agentsbox — dispatcher for enter / ls / secrets / rebuild / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -135,7 +135,6 @@ Subcommands:
   secrets add    Load a file as a podman secret for a project's agent shell
   secrets ls     List secrets mounted in a project's agent shell
   secrets rm     Remove a secret from a project's agent shell
-  install-skills Install agentsbox's bundled skills into ~/.agents/skills
   config         Set or initialize Agentsbox configuration
   rebuild        Pull the latest base image and rebuild
   upgrade        Replace the installed pinned agentsbox with the latest published tag
@@ -633,40 +632,6 @@ cmd_secrets() {
     esac
 }
 
-cmd_install_skills() {
-    # Skills live in <repo>/skills/<name>/SKILL.md; the shared store ~/.agents/skills
-    # is mounted into every sandbox. Claude Code discovers a skill via a relative
-    # symlink in ~/.claude/skills pointing back into the store — relative so it
-    # resolves the same on the host and in the container (sibling dirs under home).
-    local src="$SCRIPT_DIR/skills"
-    local store="$HOME/.agents/skills"
-    local claude_dir="$HOME/.claude/skills"
-
-    [[ -d "$src" ]] || { echo "install-skills: no skills/ dir at $src" >&2; exit 1; }
-    mkdir -p "$store" "$claude_dir"
-
-    local found=""
-    for skill in "$src"/*/; do
-        [[ -f "${skill}SKILL.md" ]] || continue
-        local name
-        name="$(basename "$skill")"
-
-        # A prior install may have been left read-only (dir 555 / file 444) by an
-        # external process; cp -R then can't overwrite it and the re-install silently
-        # stalls. Restore owner-write first so the copy always succeeds.
-        [[ -d "$store/$name" ]] && chmod -R u+w "$store/$name"
-        # Copy overwrites existing files in place; ln -sfn replaces the symlink.
-        # No removal needed — a re-install just updates what's there.
-        cp -R "${skill%/}" "$store/"
-        ln -sfn "../../.agents/skills/$name" "$claude_dir/$name"
-        echo "Installed skill '$name'"
-        found=1
-    done
-
-    [[ -n "$found" ]] || { echo "install-skills: no skills found in $src" >&2; exit 1; }
-    echo "Done. Start a fresh sandbox session to pick them up."
-}
-
 # Write a single string key into a TOML file (creating it if missing). nushell
 # parses (never sources) the TOML and round-trips it with `to toml`, preserving
 # other keys. Value is passed via env to avoid quoting issues.
@@ -866,7 +831,6 @@ case "$1" in
     run)            shift; cmd_enter "$@" ;; # alias for enter (backwards compat)
     ls)             shift; cmd_list "$@" ;;
     secrets)        shift; cmd_secrets "$@" ;;
-    install-skills) shift; cmd_install_skills "$@" ;;
     config)         shift; cmd_config "$@" ;;
     rebuild)        shift; cmd_rebuild ;;
     upgrade)        shift; cmd_upgrade ;;

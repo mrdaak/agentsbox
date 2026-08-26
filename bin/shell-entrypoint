@@ -5,6 +5,14 @@ set -e
 # HOME must point at its home so nix and zellij write there.
 export HOME=/home/agent
 
+mkdir -p "$HOME/.agents/skills" "$HOME/.claude/skills"
+for skill in /opt/agentsbox/skills/*/; do
+    [ -f "${skill}SKILL.md" ] || continue
+    name="$(basename "$skill")"
+    ln -sfn "${skill%/}" "$HOME/.agents/skills/$name"
+    ln -sfn "../../.agents/skills/$name" "$HOME/.claude/skills/$name"
+done
+
 # Zellij names the session (shown in its UI and the terminal title as
 # "Zellij (<name>)"). Without an explicit name, `zellij attach --create`
 # generates a random one and ignores session_name from the config file, so we

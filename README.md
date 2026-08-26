@@ -46,7 +46,6 @@ agentsbox upgrade
 | `agentsbox secrets add <file>` | Load a file as a podman secret, mounted into a project's agent shell              |
 | `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
 | `agentsbox secrets rm <name>`  | Remove a secret from a project's agent shell                                      |
-| `agentsbox install-skills`     | Install agentsbox's bundled skills into `~/.agents/skills` (symlinked for Claude) |
 | `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`             |
 | `agentsbox rebuild`            | Pull the latest base image and rebuild the container                              |
 | `agentsbox upgrade`            | Replace the installed pinned agentsbox with the latest published tag              |
