@@ -26,7 +26,7 @@ Isolated doesn't mean limited. agentsbox hands agents the [secrets](#secrets) th
 Install a specific, pinned release (recommended):
 
 ```bash
-nix profile install github:mrdaak/agentsbox/v0.1.25
+nix profile install github:mrdaak/agentsbox/v0.2.0
 ```
 
 Now you can run `agentsbox` from any project directory. If anything goes wrong, start with `agentsbox doctor`.
