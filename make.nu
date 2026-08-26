@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# make.nu — task runner for agentsbox (build / run / update / shell / clean / doctor).
+# make.nu — task runner for agentsbox (build / run / rebuild / shell / clean / doctor).
 # Invoked by bin/agentsbox as `nu make.nu <subcommand> [flags]`; resolves the repo
 # root via $env.AGENTS_TOOLS_DIR (set by flake.nix).
 
@@ -9,7 +9,7 @@ const PNPM_VOLUME = "agent-pnpm-store"
 
 # Image tag: AGENTSBOX_VERSION (set by flake.nix), falling back to "latest" for a
 # raw `nu make.nu` call. The versioned tag pins the running image to the installed
-# agentsbox; build/update write both it and `latest` so a failed rebuild leaves the
+# agentsbox; build/rebuild write both it and `latest` so a failed rebuild leaves the
 # previous version's tag as a rollback target.
 def image-tag [] {
     $env.AGENTSBOX_VERSION? | default "latest"
@@ -389,12 +389,12 @@ export def "main build" [] {
 }
 
 ## Force rebuild without cache and refresh the runtime Nix store
-export def "main update" [] {
+export def "main rebuild" [] {
     require-podman
     cd (root)
     let agents = (resolve-installed-agents)
     podman build --no-cache --build-arg $"AGENTSBOX_INSTALLED_AGENTS=($agents | str join (char nl))" -t $"($IMAGE_NAME):latest" -t $"($IMAGE_NAME):(image-tag)" .
-    # update is the explicit "nuke" path; ensure-nix-volume-stamped (on the
+    # rebuild is the explicit "nuke" path; ensure-nix-volume-stamped (on the
     # next run) recreates a stamped volume; gc-nix-store is the lean path.
     do -i { podman volume rm $NIX_VOLUME }
 }
@@ -619,6 +619,6 @@ export def "main select-a2a-agent" [] {
 }
 
 export def main [] {
-    print "Usage: nu make.nu <build|run|update|shell|doctor|clean-nix-store|gc-nix-store|clean-pnpm-store>"
+    print "Usage: nu make.nu <build|run|rebuild|shell|doctor|clean-nix-store|gc-nix-store|clean-pnpm-store>"
     print "  run requires --workdir; see bin/agentsbox for the caller."
 }

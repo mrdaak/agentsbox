@@ -141,7 +141,7 @@ writing.
      `agentsbox` in-box; `installed_agents` is global):
      ```
      agentsbox config installed_agents <claude,codex,...> --global
-     agentsbox update
+     agentsbox rebuild
      ```
    - **Completion:** the user is told what (if anything) must happen on the host
      for the config to take full effect.

@@ -11,7 +11,7 @@ build/run usage and repo layout see `README.md`.
 |------|---------|
 | Dev shell (sets `AGENTS_TOOLS_DIR`, prepends `bin/`) | `nix develop` |
 | Build image | `nu make.nu build` |
-| Force rebuild (no cache) + drop nix store volume | `nu make.nu update` |
+| Force rebuild (no cache) + drop nix store volume | `nu make.nu rebuild` |
 | Run container in a project dir | `nu make.nu run --workdir <dir>` |
 | Verify host env (nix, podman, image) | `nu make.nu doctor` |
 
@@ -100,7 +100,7 @@ podman does not run inside an agentsbox container, so defer those to a host shel
   `enter`, a stamp mismatch (or a legacy unstamped volume) drops and reseeds
   the volume. Do not change the label key (`agents.image`) or the digest
   source (`{{.Id}}`) without re-verifying `ensure-nix-volume-stamped`,
-  `main update`, and `main gc-nix-store` together.
+  `main rebuild`, and `main gc-nix-store` together.
 - **`:U` on `/nix` and `/pnpm-store`:** both named volumes seed from image
   content owned by root; `:U` chowns them to the box user. Without it
   single-user nix (`build-users-group =`, no daemon) cannot lock

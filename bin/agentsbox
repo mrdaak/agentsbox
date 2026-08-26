@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentsbox — dispatcher for enter / ls / secrets / install-skills / update / doctor
+# agentsbox — dispatcher for enter / ls / secrets / install-skills / rebuild / doctor
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -137,7 +137,7 @@ Subcommands:
   secrets rm     Remove a secret from a project's agent shell
   install-skills Install agentsbox's bundled skills into ~/.agents/skills
   config         Set or initialize Agentsbox configuration
-  update         Pull the latest base image and rebuild
+  rebuild        Pull the latest base image and rebuild
   upgrade        Replace the installed pinned agentsbox with the latest published tag
   gc             Garbage-collect the shared /nix store in place (refuses if a session is running)
   doctor         Check host environment for required tooling
@@ -713,7 +713,7 @@ init_global_config() {
     fi
     local img_tag="${AGENTSBOX_VERSION:-latest}"
     if command -v podman >/dev/null 2>&1 && podman image exists "agentsbox:$img_tag" >/dev/null 2>&1; then
-        echo "  Run agentsbox update to apply the selected installed_agents to the existing image."
+        echo "  Run agentsbox rebuild to apply the selected installed_agents to the existing image."
     fi
 }
 
@@ -807,13 +807,13 @@ cmd_config() {
     fi
 }
 
-cmd_update() {
+cmd_rebuild() {
     require_podman
-    exec nu "$SCRIPT_DIR/make.nu" update
+    exec nu "$SCRIPT_DIR/make.nu" rebuild
 }
 
 # Removes the profile element, then installs the new tag.
-# Host-only nix-profile plumbing; unlike update/gc, doesn't dispatch to make.nu.
+# Host-only nix-profile plumbing; unlike rebuild/gc, doesn't dispatch to make.nu.
 cmd_upgrade() {
     local installed="${AGENTSBOX_VERSION:-}"
 
@@ -868,7 +868,7 @@ case "$1" in
     secrets)        shift; cmd_secrets "$@" ;;
     install-skills) shift; cmd_install_skills "$@" ;;
     config)         shift; cmd_config "$@" ;;
-    update)         shift; cmd_update ;;
+    rebuild)        shift; cmd_rebuild ;;
     upgrade)        shift; cmd_upgrade ;;
     gc)            shift; cmd_gc ;;
     doctor)         shift; cmd_doctor "$@" ;;
