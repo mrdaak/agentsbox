@@ -22,7 +22,7 @@ confirm each proposal with the user before writing.
   TOML fails the parse. No embedded scripts/commands.
 - Target path is always `/workspace/.agentsbox/config.toml`.
 - Keep the file **portable and committable**: in-container paths only (targets
-  under `/root/` or built-in volume roots), no host-specific absolute paths.
+  under `/home/agent/` or built-in volume roots), no host-specific absolute paths.
   Note: `.agentsbox/` is gitignored in this repo's `.gitignore`; check your
   project's own `.gitignore` (add an entry if needed) and `git add -f
   .agentsbox/config.toml` if the team should share it.
@@ -45,9 +45,9 @@ in `make.nu`). The built-in list:
 
 ```
 /workspace /nix /pnpm-store
-/root/.agents /root/.claude /root/.claude.json
-/root/.codex /root/.config/codex /root/.local/share/codex
-/root/.pi/agent /root/.config/opencode /root/.local/share/opencode
+/home/agent/.agents /home/agent/.claude /home/agent/.claude.json
+/home/agent/.codex /home/agent/.config/codex /home/agent/.local/share/codex
+/home/agent/.pi/agent /home/agent/.config/opencode /home/agent/.local/share/opencode
 ```
 
 (`/pnpm-store` is already a built-in volume — never propose a pnpm-cache volume.)
@@ -175,20 +175,20 @@ the target against the built-in list above.
 
 | Manifest | name | target |
 |-----------|------|--------|
-| `go.mod` | `go-cache` | `/root/go` |
-| `go.mod` (optional) | `go-build-cache` | `/root/.cache/go-build` |
-| `Cargo.toml` | `cargo-registry` | `/root/.cargo/registry` |
-| `Cargo.toml` (optional) | `cargo-git` | `/root/.cargo/git` |
-| `pyproject.toml`/`requirements.txt` | `pip-cache` | `/root/.cache/pip` |
-| `Gemfile` | `bundle-cache` | `/root/.bundle` |
-| `composer.json` | `composer-cache` | `/root/.composer/cache` |
-| `pom.xml` | `maven-cache` | `/root/.m2` |
-| `build.gradle` | `gradle-cache` | `/root/.gradle` |
-| npm (`package-lock.json`/no pnpm lock) | `npm-cache` | `/root/.npm` |
-| `bun.lock`/`bun.lockb` | `bun-cache` | `/root/.bun/install/cache` |
-| `yarn.lock` | `yarn-cache` | `/root/.cache/yarn` |
+| `go.mod` | `go-cache` | `/home/agent/go` |
+| `go.mod` (optional) | `go-build-cache` | `/home/agent/.cache/go-build` |
+| `Cargo.toml` | `cargo-registry` | `/home/agent/.cargo/registry` |
+| `Cargo.toml` (optional) | `cargo-git` | `/home/agent/.cargo/git` |
+| `pyproject.toml`/`requirements.txt` | `pip-cache` | `/home/agent/.cache/pip` |
+| `Gemfile` | `bundle-cache` | `/home/agent/.bundle` |
+| `composer.json` | `composer-cache` | `/home/agent/.composer/cache` |
+| `pom.xml` | `maven-cache` | `/home/agent/.m2` |
+| `build.gradle` | `gradle-cache` | `/home/agent/.gradle` |
+| npm (`package-lock.json`/no pnpm lock) | `npm-cache` | `/home/agent/.npm` |
+| `bun.lock`/`bun.lockb` | `bun-cache` | `/home/agent/.bun/install/cache` |
+| `yarn.lock` | `yarn-cache` | `/home/agent/.cache/yarn` |
 
-A project venv (e.g. `/root/.venv`) only if the user asks to persist one.
+A project venv (e.g. `/home/agent/.venv`) only if the user asks to persist one.
 
 ## Invariants
 
