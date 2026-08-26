@@ -17,7 +17,7 @@ Isolated doesn't mean limited. agentsbox hands agents the [secrets](#secrets) th
 
 ## Prerequisites
 
-- **[Nix](https://nixos.org/download/)** package manager — used to install agentsbox and to provision the in-container toolchain.
+- **[Nix](https://nixos.org/download/)** package manager — used to install agentsbox and to provision the in-container toolchain. (On macOS, the Determinate Nix Installer is a single binary that installs and uninstalls cleanly, unlike the official installer: https://docs.determinate.systems.)
 - **[Podman](https://podman.io/getting-started/installation)** — the container engine. Must be installed and running (rootless; no daemon-as-root needed).
 - **OS:** Linux and macOS. (On macOS, Podman runs in a lightweight VM — `agentsbox doctor` will tell you if the machine isn't ready.) Windows is not currently supported; use WSL2 + Linux Podman.
 
