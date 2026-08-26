@@ -34,7 +34,11 @@ ENV OPENCODE_CONFIG_DIR=/root/.config/opencode
 
 # pnpm + Zellij config written to /home/agent so the running box (as agent)
 # finds them. /root copies are gone — one path, the runtime one.
-RUN mkdir -p /home/agent/.config/pnpm /home/agent/.config/zellij \
+#
+# .local/share must pre-exist owned by agent: make.nu only bind-mounts specific
+# children of it, so an absent parent gets auto-created by Podman as root,
+# blocking agent from writing siblings there (e.g. Zellij's web token store).
+RUN mkdir -p /home/agent/.config/pnpm /home/agent/.config/zellij /home/agent/.local/share \
  && printf 'storeDir: /pnpm-store\npackageImportMethod: copy\n' \
     > /home/agent/.config/pnpm/config.yaml \
  && chown -R agent:agent /home/agent
