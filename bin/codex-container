@@ -4,4 +4,4 @@ set -euo pipefail
 
 REAL_CODEX="/nix/var/nix/profiles/default/bin/codex"
 
-exec "$REAL_CODEX" --dangerously-bypass-approvals-and-sandbox "$@"
+exec "$REAL_CODEX" --dangerously-bypass-approvals-and-sandbox --config check_for_update_on_startup=false "$@"
