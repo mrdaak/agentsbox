@@ -37,6 +37,14 @@ To upgrade a pinned install to the latest published tag:
 agentsbox upgrade
 ```
 
+## Versioning
+
+agentsbox follows [Semantic Versioning](https://semver.org/). Releases are
+tagged `vX.Y.Z` and listed in [CHANGELOG.md](CHANGELOG.md).
+
+While the project is pre-1.0, a minor release may contain backwards-
+incompatible changes, and the changelog flags them.
+
 ## Commands
 
 | Command                        | Description                                                                       |

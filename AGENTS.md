@@ -105,9 +105,6 @@ podman does not run inside an agentsbox container, so defer those to a host shel
   content owned by root; `:U` chowns them to the box user. Without it
   single-user nix (`build-users-group =`, no daemon) cannot lock
   `/nix/var/nix/db` as uid 1000 and `nix develop` fails in every box.
-- **Version sync:** the `version` in `flake.nix` and the pinned install URL
-  in `README.md` (`github:mrdaak/agentsbox/v<version>`) must bump together.
-  No automated check exists; see the release checklist.
 - **Comments:** one-line header after the shebang stating *what* the file does;
   inline `#` only for non-obvious *why* (ordering deps, cross-file invariants,
   footgun guards). Never restate the code or leave commented-out code.
