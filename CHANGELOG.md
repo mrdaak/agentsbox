@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add `SECURITY.md` with the threat model and vulnerability reporting process.
+
+### Changed
+
+- Rewrite the README security section as a threat model and remove claims the
+  sandbox does not deliver.
+
 ### Fixed
 
 - Give plain terminal panes a readline-capable shell, restoring command

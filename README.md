@@ -3,7 +3,7 @@ agentsbox
 
 Run your favourite AI coding agents — Claude Code, OpenCode, Codex, Pi — in a rootless, ephemeral sandbox isolated from your host OS.
 
-It's for developers who want that power without letting an agent touch the host filesystem, run commands as your user, or read credentials it doesn't need. Each project's agent runs in its own Podman container, pre-configured so your agent config, skills, and MCPs just work.
+It's for developers who want that power without running agents as your user or exposing the rest of the host filesystem. Each project's agent runs in its own Podman container, pre-configured so your agent config, skills, and MCPs just work, with access limited to the project and the agent config it mounts.
 
 ```bash
 agentsbox enter
@@ -195,13 +195,30 @@ agentsbox runs each agent **rootless** (never as root on your host) in an epheme
 
 - **Rootless** — Podman runs as your user; there is no root daemon and the container has no path to host root.
 - **Non-root in-container user** — the agent runs as an unprivileged `agent` user inside the container (`--user agent`, plus `--userns=keep-id:uid=1000,gid=1000` on a Linux host), mapped to your host user so files in the project dir stay yours.
-- **Workspace-only filesystem** — the agent sees `/workspace` (your project) plus the explicitly-listed config/skill mounts, nothing else on your host.
+- **Restricted filesystem** — the agent sees `/workspace` (your project) and the config/skill paths agentsbox mounts. The rest of your home directory — `~/.ssh`, GPG keys, other projects — is not mounted.
 - **`no-new-privileges`** — `--security-opt no-new-privileges:true` blocks any privilege escalation inside the container.
 - **Hardened container** — `--cap-drop=ALL --pids-limit=2048 --memory=8g` bounds fork bombs, memory, and the in-container attack surface.
-- **Ephemeral (`--rm`)** — containers are destroyed after each session, so nothing persists between runs unless you mount it. ([Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers))
+- **Ephemeral (`--rm`)** — containers are destroyed after each session. State persists only where it is mounted: the project directory, your agent config, and the shared `/nix` store. ([Docker best practices](https://docs.docker.com/build/building/best-practices/#create-ephemeral-containers))
 - **Reproducible base** — the image is built from a pinned `ghcr.io/nixos/nix` base and a version-pinned Nix profile, rebuilt from version-controlled sources.
 
 Secrets are delivered as Podman secrets (read-only), never env vars, so they never appear in `inspect`/logs.
+
+### Security model
+
+Sandboxing is defense-in-depth, not a guarantee. agentsbox contains accidental damage and keeps an agent away from the rest of your host; it is not a boundary against a determined attacker.
+
+**Protects against:** accidental host writes, `rm -rf ~`, dependency-install pollution, and an agent reading host files outside `/workspace` and the paths you mount.
+
+**Does not protect against:**
+
+- **Network egress** — no egress allowlist ships yet, so an agent can send anything it can read to a remote host.
+- **Writable config mounts** — your agent-config directories are mounted read-write so your settings and sessions carry into the box. A sandboxed agent can modify them, and those files load unsandboxed the next time you run the agent on the host.
+- **Workspace changes** — the project tree is mounted read-write.
+- **Kernel and user-namespace escapes** — the isolation holds only as long as the host kernel holds; a 0-day there defeats it.
+
+Coding agents read untrusted text (READMEs, package metadata, web pages, issue comments) by design, so prompt injection is the primary threat. Sandboxing reduces the blast radius; it does not eliminate risk.
+
+Network egress control and authentication for the A2A listener are tracked as security priorities. See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
 
 ---
 
