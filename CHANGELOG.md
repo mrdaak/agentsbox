@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Give plain terminal panes a readline-capable shell, restoring command
+  history and tab completion.
+
 ## [0.2.1] - 2026-08-27
 
 ### Changed

@@ -1,3 +1,5 @@
 default_mode "locked"
 show_release_notes false
 show_startup_tips false
+// /bin/sh is bash-interactive; the pkgs.bash in $SHELL from nix develop is not.
+default_shell "/bin/sh"

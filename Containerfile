@@ -19,8 +19,8 @@ RUN echo "$AGENTSBOX_INSTALLED_AGENTS" \
 # invoking host user onto this uid so /workspace writes come out owned by
 # them). The base nix image ships no useradd/adduser, so write the
 # passwd/group/shadow entries directly — uid/gid 1000, home /home/agent,
-# shell /bin/bash match useradd's defaults.
-RUN printf 'agent:x:1000:1000::/home/agent:/bin/bash\n' >> /etc/passwd \
+# shell /bin/sh (readline-capable; see zellij-config.kdl).
+RUN printf 'agent:x:1000:1000::/home/agent:/bin/sh\n' >> /etc/passwd \
  && printf 'agent:x:1000:\n' >> /etc/group \
  && printf 'agent:!:19000:0:99999:7:::\n' >> /etc/shadow \
  && mkdir -p /home/agent

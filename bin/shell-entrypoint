@@ -89,6 +89,8 @@ EOF
 }
 
 start_session() {
+    # Zellij panes open $SHELL; use readline-capable /bin/sh (see zellij-config.kdl).
+    export SHELL=/bin/sh
     if [ "${WEB_ENABLED:-}" = "1" ] && [ ! -f /tmp/zellij-web.started ]; then
         touch /tmp/zellij-web.started
         zellij web --ip 127.0.0.1 --port 8083 --daemonize >/tmp/zellij-web.log 2>&1 || true
