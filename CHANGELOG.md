@@ -12,6 +12,10 @@ All notable changes to this project are documented in this file.
 
 - Rewrite the README security section as a threat model and remove claims the
   sandbox does not deliver.
+- Document the `send-message --data` structured-op flow in the ask-agent skill.
+- Bump the pinned Codex CLI to 0.156.1.
+- Bump the pinned Claude Code to 2.1.281.
+- Bump the pinned pi to 0.87.1.
 
 ### Fixed
 
