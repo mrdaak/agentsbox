@@ -506,6 +506,9 @@ export def "main run" [
     if ($agent | is-not-empty) and $agent != "none" {
         $run_args = ($run_args | append ["-e" $"AGENTSBOX_AGENT=($agent)"])
     }
+    if (($env.AGENTSBOX_LOAD_NIX? | default "") == "1") {
+        $run_args = ($run_args | append ["-e" "AGENTSBOX_LOAD_NIX=1"])
+    }
 
     $run_args = ($run_args | append [
         -e $"AGENT_NAME=($name)"

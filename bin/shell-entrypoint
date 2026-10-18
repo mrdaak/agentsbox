@@ -124,6 +124,7 @@ fi
 
 ask_load() {
     local label="$1"
+    [ "${AGENTSBOX_LOAD_NIX:-}" = "1" ] && return 0
     read -r -p "Detected $label. Load nix environment? [Y/n]: " answer
     case "$answer" in
         [Nn]*) return 1 ;;
@@ -142,6 +143,10 @@ print_load_error() {
 }
 
 pick_devshell() {
+    if [ "${AGENTSBOX_LOAD_NIX:-}" = "1" ]; then
+        echo "default"
+        return
+    fi
     local shells
     shells=$(nix "${NIX_FLAGS[@]}" flake show --json 2>/dev/null \
         | jq -r '.devShells | to_entries[0].value | keys[]' 2>/dev/null) || true
