@@ -44,7 +44,7 @@
             runHook preInstall
 
             mkdir -p $out/share/agents $out/bin
-            cp -r make.nu Containerfile Containerfile.workflow packages.nix workflow-nixpkgs.nix workflow-packages.nix claude-code.nix codex.nix pi.nix opencode.nix bin skills zellij-config.kdl $out/share/agents/
+            cp -r make.nu Containerfile Containerfile.workflow packages.nix workflow-nixpkgs.nix workflow-packages.nix claude-code.nix codex.nix pi.nix opencode.nix bin skills docs README.md zellij-config.kdl $out/share/agents/
             chmod +x $out/share/agents/bin/*
 
             makeWrapper $out/share/agents/bin/agentsbox $out/bin/agentsbox \

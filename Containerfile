@@ -46,7 +46,8 @@ RUN mkdir -p /home/agent/.config/pnpm /home/agent/.config/zellij /home/agent/.lo
 COPY zellij-config.kdl /home/agent/.config/zellij/config.kdl
 
 COPY skills /opt/agentsbox/skills
-RUN chmod -R a+rX /opt/agentsbox/skills
+COPY README.md docs /opt/agentsbox/
+RUN chmod -R a+rX /opt/agentsbox
 
 # Allow git to work on mounted repositories in /workspace
 RUN git config --system safe.directory /workspace
