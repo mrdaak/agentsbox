@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentsbox — dispatcher for enter / ls / secrets / rebuild / doctor
+# agentsbox — dispatch interactive sessions, workflow images, and maintenance.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -136,6 +136,8 @@ Subcommands:
   secrets ls     List secrets mounted in a project's agent shell
   secrets rm     Remove a secret from a project's agent shell
   config         Set or initialize Agentsbox configuration
+  image build    Build a standalone workflow image from a profile directory
+  image run      Run a workflow image against a target directory
   rebuild        Pull the latest base image and rebuild
   upgrade        Replace the installed pinned agentsbox with the latest published tag
   gc             Garbage-collect the shared /nix store in place (refuses if a session is running)
@@ -824,6 +826,15 @@ cmd_doctor() {
     exec "$SCRIPT_DIR/bin/doctor" "$@"
 }
 
+cmd_image() {
+    local sub="${1:-}"
+    [[ $# -gt 0 ]] && shift
+    case "$sub" in
+        build|run) exec "$SCRIPT_DIR/bin/workflow-image" "$sub" "$@" ;;
+        *) echo "usage: agentsbox image build <profile-dir> | agentsbox image run <image-ref> [target-dir]" >&2; exit 1 ;;
+    esac
+}
+
 if [[ $# -eq 0 ]]; then
     usage
     exit 0
@@ -835,6 +846,7 @@ case "$1" in
     ls)             shift; cmd_list "$@" ;;
     secrets)        shift; cmd_secrets "$@" ;;
     config)         shift; cmd_config "$@" ;;
+    image)          shift; cmd_image "$@" ;;
     rebuild)        shift; cmd_rebuild ;;
     upgrade)        shift; cmd_upgrade ;;
     gc)            shift; cmd_gc ;;

@@ -55,6 +55,8 @@ incompatible changes, and the changelog flags them.
 | `agentsbox secrets ls`         | List the secrets mounted into a project's agent shell                             |
 | `agentsbox secrets rm <name>`  | Remove a secret from a project's agent shell                                      |
 | `agentsbox config`             | Set a config value (e.g. default `agent`) in `.agentsbox/config.toml`             |
+| `agentsbox image build DIR`    | Build a standalone workflow image from a profile directory                       |
+| `agentsbox image run IMAGE`    | Run an existing workflow image against a target directory                        |
 | `agentsbox rebuild`            | Pull the latest base image and rebuild the container                              |
 | `agentsbox upgrade`            | Replace the installed pinned agentsbox with the latest published tag              |
 | `agentsbox doctor`             | Check host environment for required tooling                                       |

@@ -1,0 +1,205 @@
+#!/usr/bin/env nu
+# workflow-image — build and run standalone workflow images from validated profiles.
+
+const ROOT = path self ..
+
+def invalid-config [] {
+    error make {msg: "image: invalid image.toml (expected name, agent, tools, optional files, and optional Codex defaults)"}
+}
+
+def valid-file-path [file: any] {
+    if ($file | describe) != "string" { return false }
+    let parts = ($file | split row "/")
+    if $file == "" or ($file | str starts-with "/") { return false }
+    if not ($parts | all {|part| $part != "" and $part != "." and $part != ".."}) { return false }
+    if $file =~ '[\x00-\x1f\x7f]' { return false }
+    $file != "run" and $file != "image-config.json"
+}
+
+def read-config [profile: string] {
+    let config_file = ($profile | path join "image.toml")
+    if ($config_file | path type) != "file" { error make {msg: "image: profile must contain image.toml"} }
+    let manifest = (open $config_file)
+    if not (($manifest | describe) | str starts-with "record") { invalid-config }
+    let allowed = [name agent tools files codex]
+    if ($manifest | columns | any {|key| $key not-in $allowed}) { invalid-config }
+
+    let name = ($manifest | get -o name)
+    let agent = ($manifest | get -o agent)
+    let tools = ($manifest | get -o tools)
+    if ($name | describe) != "string" or $name == "agentsbox" or $name !~ '^[a-z0-9][a-z0-9._-]*$' { invalid-config }
+    if ($agent | describe) != "string" or $agent not-in [claude codex pi opencode] { invalid-config }
+    if not (($tools | describe) | str starts-with "list") { invalid-config }
+    if not ($tools | all {|tool| ($tool | describe) == "string" and $tool =~ '^[A-Za-z][A-Za-z0-9_-]*$'}) { invalid-config }
+
+    let files = ($manifest | get -o files | default [])
+    if not (($files | describe) | str starts-with "list") { invalid-config }
+    if not ($files | all {|file| valid-file-path $file}) { invalid-config }
+
+    let codex = ($manifest | get -o codex)
+    if $codex != null {
+        if $agent != "codex" or not (($codex | describe) | str starts-with "record") { invalid-config }
+        if ($codex | columns | any {|key| $key not-in [model reasoning_effort]}) { invalid-config }
+        let model = ($codex | get -o model)
+        let effort = ($codex | get -o reasoning_effort)
+        if ($model | describe) != "string" or $model == "" { invalid-config }
+        if ($effort | describe) != "string" or $effort !~ '^[a-z]+$' { invalid-config }
+    }
+
+    $manifest
+}
+
+def copy-profile-file [profile: string, stage: string, relative: string] {
+    let parts = ($relative | split row "/")
+    mut source = $profile
+    for component in ($parts | take (($parts | length) - 1)) {
+        $source = ($source | path join $component)
+        if ($source | path type) != "dir" {
+            error make {msg: $"image build: profile path is not a regular directory: ($relative)"}
+        }
+    }
+    $source = ($source | path join ($parts | last))
+    if ($source | path type) != "file" {
+        error make {msg: $"image build: profile file is missing or symlinked: ($relative)"}
+    }
+    let destination = ($stage | path join "workflow" $relative)
+    mkdir ($destination | path dirname)
+    cp $source $destination
+}
+
+def build-image [profile: string] {
+    let profile = ($profile | path expand --strict)
+    if ($profile | path type) != "dir" or ($profile | path join "run" | path type) != "file" {
+        error make {msg: "image build: profile must contain image.toml and run"}
+    }
+    let manifest = (read-config $profile)
+    let name = $manifest.name
+    let agent = $manifest.agent
+    let tools = ($manifest.tools | str join " ")
+    if (which podman | is-empty) { error make {msg: "image build: podman is required"} }
+
+    let stage = (mktemp -d)
+    try {
+        mkdir ($stage | path join "workflow")
+        cp ($ROOT | path join "Containerfile.workflow") ($stage | path join "Containerfile")
+        for file in [workflow-nixpkgs.nix workflow-packages.nix claude-code.nix codex.nix pi.nix opencode.nix] {
+            cp ($ROOT | path join $file) ($stage | path join $file)
+        }
+        copy-profile-file $profile $stage run
+        for file in ($manifest | get -o files | default []) {
+            copy-profile-file $profile $stage $file
+        }
+        $manifest | to json -r | save ($stage | path join "workflow/image-config.json")
+
+        ^podman build --build-arg $"AGENTSBOX_AGENT=($agent)" --build-arg $"AGENTSBOX_TOOLS=($tools)" -t $"($name):latest" $stage
+    } catch {|error|
+        rm --permanent --recursive --force $stage
+        error make {msg: $"image build: ($error.msg)"}
+    }
+    rm --permanent --recursive --force $stage
+    print $"Built ($name):latest"
+}
+
+def inside-target [target: string, output: string] {
+    $target == "/" or $output == $target or ($output | str starts-with $"($target)/")
+}
+
+def run-image [args: list<string>] {
+    let usage = "usage: agentsbox image run <image-ref> [target-dir] [--output DIR] [--codex-auth] [-- workflow-args...]"
+    if ($args | is-empty) {
+        print -e $usage
+        exit 1
+    }
+    if ($args | first) in [--help -h] {
+        print $usage
+        return
+    }
+    let image = ($args | first)
+    if $image !~ '^[A-Za-z0-9][A-Za-z0-9._:/@-]*$' {
+        error make {msg: "image run: invalid image reference"}
+    }
+    let name = ($image | split row "/" | last | str replace --all --regex '[^A-Za-z0-9._-]' '-')
+
+    mut target = ""
+    mut output = ""
+    mut codex_auth = false
+    mut workflow_args = []
+    mut workflow_started = false
+    mut position = 1
+    while $position < ($args | length) {
+        let arg = ($args | get $position)
+        if $arg == "--output" and not $workflow_started {
+            let value = ($args | get -o ($position + 1))
+            if $value == null or $value == "" or ($value | str starts-with "-") {
+                error make {msg: "image run: --output needs a directory"}
+            }
+            $output = $value
+            $position += 2
+        } else if $arg == "--codex-auth" and not $workflow_started {
+            $codex_auth = true
+            $position += 1
+        } else if $arg == "--" {
+            $workflow_args = ($workflow_args | append ($args | skip ($position + 1)))
+            break
+        } else if ($arg | str starts-with "-") or $workflow_started {
+            $workflow_started = true
+            $workflow_args = ($workflow_args | append $arg)
+            $position += 1
+        } else {
+            if $target != "" { error make {msg: $"image run: unexpected target directory: ($arg)"} }
+            $target = $arg
+            $position += 1
+        }
+    }
+
+    let target = (if $target == "" { pwd } else { $target })
+    if ($target | path type) != "dir" { error make {msg: $"image run: target directory does not exist: ($target)"} }
+    let target = ($target | path expand --strict)
+    let output = (if $output == "" {
+        let output_name = $"(($target | path basename))-($name)-reports"
+        $target | path dirname | path join $output_name
+    } else { $output })
+    let output = ($output | path expand)
+    if (inside-target $target $output) { error make {msg: "image run: report directory must be outside the target"} }
+    mkdir $output
+    let output = ($output | path expand --strict)
+    if (inside-target $target $output) { error make {msg: "image run: report directory must be outside the target"} }
+
+    mut mounts = [-v $"($target):/workspace:ro,Z" -v $"($output):/reports:Z"]
+    if $codex_auth {
+        let codex_home = ($env.CODEX_HOME? | default ($env.HOME | path join ".codex"))
+        let auth = ($codex_home | path join "auth.json" | path expand)
+        if ($auth | path type) != "file" { error make {msg: $"image run: Codex login not found at ($auth)"} }
+        $mounts = ($mounts | append [-v $"($auth):/run/secrets/codex-auth.json:ro,Z"])
+    }
+
+    if (which podman | is-empty) { error make {msg: "image run: podman is required"} }
+    let exists = (do -i { ^podman image exists $image } | complete)
+    if $exists.exit_code != 0 { error make {msg: $"image run: image not found locally: ($image); build it with agentsbox image build <profile-dir>"} }
+    let remote = (^podman info --format '{{.Host.ServiceIsRemote}}' | str trim)
+    let userns = (if $remote == "false" { ["--userns=keep-id:uid=1000,gid=1000"] } else { [] })
+
+    ^podman run --rm --security-opt no-new-privileges:true --cap-drop=ALL --pids-limit=2048 --memory=8g --user agent ...$userns ...$mounts $image ...$workflow_args
+    print $"Workflow reports: ($output)"
+}
+
+def --wrapped main [...args: string] {
+    if ($args | is-empty) {
+        print -e "usage: agentsbox image build <profile-dir> | agentsbox image run <image-ref> [target-dir]"
+        exit 1
+    }
+    let subcommand = ($args | first)
+    let options = ($args | skip 1)
+    match $subcommand {
+        "build" => {
+            if $options == [--help] or $options == [-h] {
+                print "usage: agentsbox image build <profile-dir>"
+                return
+            }
+            if ($options | length) != 1 { error make {msg: "usage: agentsbox image build <profile-dir>"} }
+            build-image ($options | first)
+        }
+        "run" => { run-image $options }
+        _ => { error make {msg: "usage: agentsbox image build <profile-dir> | agentsbox image run <image-ref> [target-dir]"} }
+    }
+}
