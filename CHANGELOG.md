@@ -4,7 +4,34 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add `agentsbox image run --auth`, which mounts the login for the agent baked
+  into the image (`agentsbox.agent` label). Codex and Pi are supported.
+- Accept an optional `[pi]` table (`model`, `thinking`) in `image.toml`.
+
+### Changed
+
+- Replace `image run --codex-auth` with `image run --auth`; the agent is now
+  inferred from the image's `agentsbox.agent` label.
+
 ## [0.4.0] - 2026-10-19
+
+### Added
+
+- Add `agentsbox image build` and `agentsbox image run` to build and run
+  standalone workflow images from a profile directory.
+- Add `docs/custom-agents.md` describing how to create a custom agent.
+- Add the `enter --load-nix` flag to load the project's Nix environment
+  without prompting.
+- Bake the agentsbox docs into the image at `/opt/agentsbox` and add the
+  `agentsbox-guide` skill so agents can read them offline.
+
+### Changed
+
+- Bump the pinned pi to 1.3.0.
+- Bump the pinned Codex CLI to 0.163.0.
+- Bump the pinned Claude Code to 2.1.303.
 
 ## [0.3.0] - 2026-09-24
 
