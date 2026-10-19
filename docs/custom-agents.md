@@ -24,12 +24,15 @@ files = ["prompt.md"]
 
 `image.toml` names the image, selects one of `claude`, `codex`, `pi`, or
 `opencode`, lists packages from the centrally pinned nixpkgs set, and allowlists
-the runtime files to copy. The `run` script is the image entrypoint: it invokes
-the selected agent, handles workflow options, and writes results. Add prompts,
-schemas, or other assets to `files` only when the workflow needs them. An
-optional `rules.nix` can bundle data at build time using the same pinned `pkgs`
-set. A profile-local `AGENTS.md` can guide development; it is not a runtime
-instruction unless deliberately bundled and used by the workflow.
+the runtime files to copy. A profile can also carry optional `[codex]` (`model`,
+`reasoning_effort`) and `[pi]` (`model`, `thinking`) tables; the `run` script reads
+the selected agent and these defaults from
+`/opt/agentsbox/workflow/image-config.json`. The `run` script is the image
+entrypoint: it invokes the selected agent, handles workflow options, and writes
+results. Add prompts, schemas, or other assets to `files` only when the workflow
+needs them. An optional `rules.nix` can bundle data at build time using the same
+pinned `pkgs` set. A profile-local `AGENTS.md` can guide development; it is not a
+runtime instruction unless deliberately bundled and used by the workflow.
 
 ## Build and run
 
@@ -40,10 +43,12 @@ agentsbox image run repo-review:latest /path/to/target-repo
 
 `image run` mounts the target read-only at `/workspace` and provides a writable
 `/reports` directory outside the target. The image must create its own report
-there; `image.toml` does not define the workflow by itself. For a Codex
-workflow, `--codex-auth` explicitly mounts an existing login. Keep credentials
-and repository-specific inputs out of the image. The image can also run with a
-regular OCI runtime without the agentsbox CLI.
+there; `image.toml` does not define the workflow by itself. `image run --auth`
+mounts the login of the agent recorded in the image (`agentsbox.agent` label).
+Codex and Pi are supported; Codex reads `$CODEX_HOME/auth.json`, Pi reads
+`$PI_CODING_AGENT_DIR/auth.json` (default `~/.pi/agent/auth.json`). Keep
+credentials and repository-specific inputs out of the image. The image can also
+run with a regular OCI runtime without the agentsbox CLI.
 
 ## Validate before reuse
 

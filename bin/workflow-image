@@ -4,7 +4,7 @@
 const ROOT = path self ..
 
 def invalid-config [] {
-    error make {msg: "image: invalid image.toml (expected name, agent, tools, optional files, and optional Codex defaults)"}
+    error make {msg: "image: invalid image.toml (expected name, agent, tools, optional files, and optional Codex/Pi defaults)"}
 }
 
 def valid-file-path [file: any] {
@@ -21,7 +21,7 @@ def read-config [profile: string] {
     if ($config_file | path type) != "file" { error make {msg: "image: profile must contain image.toml"} }
     let manifest = (open $config_file)
     if not (($manifest | describe) | str starts-with "record") { invalid-config }
-    let allowed = [name agent tools files codex]
+    let allowed = [name agent tools files codex pi]
     if ($manifest | columns | any {|key| $key not-in $allowed}) { invalid-config }
 
     let name = ($manifest | get -o name)
@@ -38,12 +38,22 @@ def read-config [profile: string] {
 
     let codex = ($manifest | get -o codex)
     if $codex != null {
-        if $agent != "codex" or not (($codex | describe) | str starts-with "record") { invalid-config }
+        if not (($codex | describe) | str starts-with "record") { invalid-config }
         if ($codex | columns | any {|key| $key not-in [model reasoning_effort]}) { invalid-config }
         let model = ($codex | get -o model)
         let effort = ($codex | get -o reasoning_effort)
         if ($model | describe) != "string" or $model == "" { invalid-config }
         if ($effort | describe) != "string" or $effort !~ '^[a-z]+$' { invalid-config }
+    }
+
+    let pi_cfg = ($manifest | get -o pi)
+    if $pi_cfg != null {
+        if not (($pi_cfg | describe) | str starts-with "record") { invalid-config }
+        if ($pi_cfg | columns | any {|key| $key not-in [model thinking]}) { invalid-config }
+        let model = ($pi_cfg | get -o model)
+        let thinking = ($pi_cfg | get -o thinking)
+        if ($model | describe) != "string" or $model == "" { invalid-config }
+        if ($thinking | describe) != "string" or $thinking !~ '^[a-z]+$' { invalid-config }
     }
 
     $manifest
@@ -91,7 +101,7 @@ def build-image [profile: string] {
         }
         $manifest | to json -r | save ($stage | path join "workflow/image-config.json")
 
-        ^podman build --build-arg $"AGENTSBOX_AGENT=($agent)" --build-arg $"AGENTSBOX_TOOLS=($tools)" -t $"($name):latest" $stage
+        ^podman build --build-arg $"AGENTSBOX_AGENT=($agent)" --build-arg $"AGENTSBOX_TOOLS=($tools)" --label $"agentsbox.agent=($agent)" -t $"($name):latest" $stage
     } catch {|error|
         rm --permanent --recursive --force $stage
         error make {msg: $"image build: ($error.msg)"}
@@ -105,7 +115,7 @@ def inside-target [target: string, output: string] {
 }
 
 def run-image [args: list<string>] {
-    let usage = "usage: agentsbox image run <image-ref> [target-dir] [--output DIR] [--codex-auth] [-- workflow-args...]"
+    let usage = "usage: agentsbox image run <image-ref> [target-dir] [--output DIR] [--auth] [-- workflow-args...]"
     if ($args | is-empty) {
         print -e $usage
         exit 1
@@ -122,7 +132,7 @@ def run-image [args: list<string>] {
 
     mut target = ""
     mut output = ""
-    mut codex_auth = false
+    mut auth = false
     mut workflow_args = []
     mut workflow_started = false
     mut position = 1
@@ -135,8 +145,8 @@ def run-image [args: list<string>] {
             }
             $output = $value
             $position += 2
-        } else if $arg == "--codex-auth" and not $workflow_started {
-            $codex_auth = true
+        } else if $arg == "--auth" and not $workflow_started {
+            $auth = true
             $position += 1
         } else if $arg == "--" {
             $workflow_args = ($workflow_args | append ($args | skip ($position + 1)))
@@ -166,16 +176,32 @@ def run-image [args: list<string>] {
     if (inside-target $target $output) { error make {msg: "image run: report directory must be outside the target"} }
 
     mut mounts = [-v $"($target):/workspace:ro,Z" -v $"($output):/reports:Z"]
-    if $codex_auth {
-        let codex_home = ($env.CODEX_HOME? | default ($env.HOME | path join ".codex"))
-        let auth = ($codex_home | path join "auth.json" | path expand)
-        if ($auth | path type) != "file" { error make {msg: $"image run: Codex login not found at ($auth)"} }
-        $mounts = ($mounts | append [-v $"($auth):/run/secrets/codex-auth.json:ro,Z"])
-    }
 
     if (which podman | is-empty) { error make {msg: "image run: podman is required"} }
     let exists = (do -i { ^podman image exists $image } | complete)
     if $exists.exit_code != 0 { error make {msg: $"image run: image not found locally: ($image); build it with agentsbox image build <profile-dir>"} }
+
+    if $auth {
+        let agent = (do -i { ^podman image inspect --format '{{index .Labels "agentsbox.agent"}}' $image } | default "" | str trim)
+        if ($agent | is-empty) or $agent == "<no value>" {
+            error make {msg: "image run: image has no 'agentsbox.agent' label; rebuild it with this agentsbox version"}
+        }
+        match $agent {
+            "codex" => {
+                let codex_home = ($env.CODEX_HOME? | default ($env.HOME | path join ".codex"))
+                let auth_file = ($codex_home | path join "auth.json" | path expand)
+                if ($auth_file | path type) != "file" { error make {msg: $"image run: Codex login not found at ($auth_file)"} }
+                $mounts = ($mounts | append [-v $"($auth_file):/run/secrets/codex-auth.json:ro,Z"])
+            }
+            "pi" => {
+                let pi_home = ($env.PI_CODING_AGENT_DIR? | default ($env.HOME | path join ".pi" "agent"))
+                let auth_file = ($pi_home | path join "auth.json" | path expand)
+                if ($auth_file | path type) != "file" { error make {msg: $"image run: Pi login not found at ($auth_file)"} }
+                $mounts = ($mounts | append [-v $"($auth_file):/run/secrets/pi-auth.json:ro,Z"])
+            }
+            _ => { error make {msg: $"image run: --auth does not support agent '($agent)' yet \(supported: codex, pi)"} }
+        }
+    }
     let remote = (^podman info --format '{{.Host.ServiceIsRemote}}' | str trim)
     let userns = (if $remote == "false" { ["--userns=keep-id:uid=1000,gid=1000"] } else { [] })
 
