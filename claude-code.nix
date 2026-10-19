@@ -3,7 +3,7 @@
 { pkgs ? import <nixpkgs> { config.allowUnfree = true; } }:
 
 let
-  version = "2.1.281";
+  version = "2.1.303";
 
   platformKey = {
     aarch64-linux = "linux-arm64";
@@ -13,10 +13,10 @@ let
   }.${pkgs.stdenv.hostPlatform.system};
 
   sha256 = {
-    aarch64-linux = "sha256-dYO2VYVWHHFOGMrKReDg+5vbptftbuXVFxg01cZXrqY=";
-    x86_64-linux = "sha256-T/ufa6raTYi72MWGdz79BgXFJMejHMODPu2iKXF6eyU=";
-    aarch64-darwin = "sha256-BWZipOOlyjd3BzClk0XRtXlu9lREwyuX0jZlGraPP6E=";
-    x86_64-darwin = "sha256-CF3ZlSmZx0LPJi0P7VccO810nVEn633UVbxb4JSMe50=";
+    aarch64-linux = "sha256-SowNLgq08x0rPh3BNs7GzU7xDBw0iXyr3s6FcKSI0sQ=";
+    x86_64-linux = "sha256-sAuSlbglFpl1mDyeHNPrLbvJyVgn+os3egvvC7i0cag=";
+    aarch64-darwin = "sha256-SCqkkNweAyi+4QoWO+9/WcfHLhTedTVpa1vTrsAIn30=";
+    x86_64-darwin = "sha256-7hSN8UJLVCKtbTSL4x8ITUZ7dM8f21ZOT57Hg/b74HU=";
   }.${pkgs.stdenv.hostPlatform.system};
 
   claude-zst = pkgs.fetchurl {
